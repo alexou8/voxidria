@@ -11,8 +11,10 @@
 #   - Logged in: supabase login
 #   - Project linked: supabase link --project-ref ugmgrncvxkeaazzwizki
 #
-# These secrets are injected as environment variables into every Edge Function.
-# They are NEVER stored in version control.
+# These values are injected as environment variables into every Edge Function.
+# Public configuration (e.g. project ref, Auth0 domain) is hard-coded here and
+# safe to commit. Sensitive secrets (service role key, API keys, anon key, and
+# allowed origin) must be entered at runtime and are not stored in version control.
 # =============================================================================
 
 set -euo pipefail
@@ -26,9 +28,13 @@ echo ""
 # Prompt for secrets that should not be hard-coded here
 read -rsp "SUPABASE_SERVICE_ROLE_KEY: " SUPABASE_SERVICE_ROLE_KEY
 echo ""
+read -rsp "SUPABASE_ANON_KEY: " SUPABASE_ANON_KEY
+echo ""
 read -rsp "GEMINI_API_KEY: " GEMINI_API_KEY
 echo ""
 read -rsp "ELEVENLABS_API_KEY: " ELEVENLABS_API_KEY
+echo ""
+read -rp "ALLOWED_ORIGIN (e.g. https://your-app.vercel.app): " ALLOWED_ORIGIN
 echo ""
 
 supabase secrets set \
@@ -36,14 +42,14 @@ supabase secrets set \
   AUTH0_AUDIENCE=voxidria \
   AUTH0_ISSUER_BASE_URL=https://alexou.ca.auth0.com/ \
   SUPABASE_URL=https://ugmgrncvxkeaazzwizki.supabase.co \
-  SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnbWdybmN2eGtlYWF6endpemtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyNDg1OTYsImV4cCI6MjA4NzgyNDU5Nn0.yrkdvsGAs2LfWUB6VZnL75WZviJYhTOY50mZldthfLM \
+  SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
   SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
   GEMINI_API_KEY="$GEMINI_API_KEY" \
   GEMINI_MODEL=gemini-1.5-pro \
   ELEVENLABS_API_KEY="$ELEVENLABS_API_KEY" \
   ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM \
   ELEVENLABS_MODEL_ID=eleven_multilingual_v2 \
-  ALLOWED_ORIGIN=http://localhost:5173
+  ALLOWED_ORIGIN="$ALLOWED_ORIGIN"
 
 echo ""
 echo "Secrets set successfully. Verify with: supabase secrets list"
