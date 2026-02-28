@@ -59,6 +59,7 @@ export default function RecordPage() {
   const [step, setStep] = useState(STEPS.CONSENT);
   const [selectedTask, setSelectedTask] = useState(TASKS[1]); // default: READING
   const [sessionId, setSessionId] = useState(null);
+  const [tasks, setTasks] = useState([]);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [guideAudioUrl, setGuideAudioUrl] = useState("");
@@ -149,8 +150,10 @@ export default function RecordPage() {
       const data = await createSession("1.0", deviceMeta, getAccessTokenSilently);
       resetGuide();
       setSessionId(data.session_id);
+      setTasks(data.tasks);
       setStep(STEPS.TASK);
     } catch (err) {
+      console.error("Create session failed:", err);
       setError("Could not start session. Please try again.");
     }
   };
@@ -173,10 +176,14 @@ export default function RecordPage() {
       // 2. Upload audio directly to Supabase Storage (no secrets sent to browser)
       await uploadAudioToStorage(signedUrl, recorder.audioBlob);
 
+
+      const currentTask = tasks.find(
+        (t) => t.task_type === selectedTask.type
+      );
+
       // 3. Finalize task — backend runs Gemini reading analysis for READING tasks
       const finalized = await finalizeTask(
-        sessionId,
-        selectedTask.type,
+        currentTask.task_id,
         "",           // transcript: Web Speech API integration is a stretch goal
         getAccessTokenSilently
       );
