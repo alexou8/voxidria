@@ -154,6 +154,22 @@ export async function deleteSession(sessionId, getToken) {
 }
 
 /**
+ * Send a message to the Vox chatbot and get an AI response.
+ * Returns { response: string }
+ * The GEMINI_API_KEY stays server-side — this function only sends text.
+ */
+export async function sendChatMessage(message, history, getToken) {
+  return callFunction(
+    "/chatbot",
+    {
+      method: "POST",
+      body: JSON.stringify({ message, history }),
+    },
+    getToken
+  );
+}
+
+/**
  * Call ElevenLabs TTS via the backend proxy.
  * Returns an audio/mpeg Blob for browser playback.
  * The ELEVENLABS_API_KEY stays server-side — this function only sends text.

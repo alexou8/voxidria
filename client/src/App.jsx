@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import Header from "./components/Header";
+import Chatbot from "./components/Chatbot";
 import LandingPage from "./pages/LandingPage";
 import DashboardPage from "./pages/DashboardPage";
 import RecordPage from "./pages/RecordPage";
@@ -32,6 +33,7 @@ export default function App() {
           />
         </Routes>
       </main>
+      <Chatbot />
     </>
   );
 }
