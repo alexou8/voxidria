@@ -39,9 +39,18 @@ import { logInfo, logError } from "../_shared/utils/logger.ts";
 const FUNCTION_NAME = "create-session";
 
 serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+      },
+    });
+  }
   // Handle CORS preflight
-  const corsResponse = handleCors(req);
-  if (corsResponse) return corsResponse;
+  // const corsResponse = handleCors(req);
+  // if (corsResponse) return corsResponse;
 
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
@@ -93,12 +102,17 @@ serve(async (req: Request) => {
 
     // Upsert user — Auth0 is the source of truth for identity.
     // We store the sub so we can join sessions to users without Auth0 API calls.
+    const upsertData = {
+      user_id: userId,
+      email: claims.email ?? null,
+    };
+
+    if (typeof consent_version_accepted !== "undefined") {
+      upsertData.consent_version_accepted = String(consent_version_accepted);
+    }
+
     const { error: userError } = await supabase.from("users").upsert(
-      {
-        user_id: userId,
-        email: claims.email ?? null,
-        consent_version_accepted: String(consent_version_accepted),
-      },
+      upsertData,
       { onConflict: "user_id" }
     );
     if (userError) throw userError;
