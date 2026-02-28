@@ -5,7 +5,7 @@ Voxidria is a web platform that records short voice tasks and uses a speech-base
 ## Architecture
 
 ```
-client/          React (Vite) SPA
+frontend/        React (Vite) SPA
   src/
     components/  Header, ResultsCard
     pages/       Landing, Dashboard, Record
@@ -38,7 +38,7 @@ npm run install:all
 
 ```bash
 cp server/.env.example server/.env
-cp client/.env.example client/.env
+cp frontend/.env.example frontend/.env
 ```
 
 Fill in your Auth0 and Gemini credentials.
