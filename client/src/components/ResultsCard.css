@@ -1,0 +1,118 @@
+.results-card {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.results-card h2 {
+  font-size: 1.5rem;
+}
+
+/* Gauge */
+.risk-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gauge-ring {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--color) calc(var(--score) * 1%),
+    var(--border) calc(var(--score) * 1%)
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gauge-inner {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+}
+
+.gauge-score {
+  font-size: 2.5rem;
+  font-weight: 800;
+}
+
+.gauge-label {
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.risk-level {
+  font-weight: 700;
+  font-size: 1.1rem;
+  text-transform: capitalize;
+}
+
+/* Features */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.feature-item {
+  text-align: center;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 0.75rem 0.5rem;
+}
+
+.feature-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.feature-value {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+/* Explanation */
+.explanation {
+  width: 100%;
+}
+
+.explanation h3 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.explanation-text {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.results-disclaimer {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+  width: 100%;
+}
