@@ -1,10 +1,12 @@
 import numpy as np
 import joblib
 from tensorflow import keras
+from pathlib import Path
 
-MODEL_PATH = "artifacts/parkinsons_model.h5"
-SCALER_PATH = "artifacts/scaler.joblib"
-FEATURES_PATH = "artifacts/feature_names.joblib"
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = BASE_DIR / "artifacts" / "parkinsons_model.h5"
+SCALER_PATH = BASE_DIR / "artifacts" / "scaler.joblib"
+FEATURES_PATH = BASE_DIR / "artifacts" / "feature_names.joblib"
 
 model = keras.models.load_model(MODEL_PATH)
 scaler = joblib.load(SCALER_PATH)
