@@ -72,6 +72,14 @@
   font-size: 0.95rem;
 }
 
+.assistant-guide {
+  margin-top: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
 /* Recorder */
 .recorder-section {
   width: 100%;

@@ -12,10 +12,8 @@
  *   - We can audit and log which text is being synthesized.
  *
  * Auth requirements:
- *   - For SITE_HELP and RESULTS_HELP modes: requires Auth0 JWT (authenticated users only).
- *   - Rationale: even for "generic" help text, requiring auth prevents anonymous
- *     abuse of the ElevenLabs quota. Change REQUIRE_AUTH_FOR_SITE_HELP env var to
- *     "false" to allow anonymous access for the landing page if needed.
+ *   - For all modes: requires Auth0 JWT (authenticated users only).
+ *   - Rationale: requiring auth prevents anonymous abuse of the ElevenLabs quota.
  *
  * Rate limiting (TODO for production):
  *   Track calls per user in a rate_limit table. Reject if > N calls/minute/user.
@@ -27,7 +25,8 @@
  *   Authorization: Bearer <auth0_token>
  *   Body: {
  *     "text": "Welcome to Voxidria. Here's how your results are calculated...",
- *     "mode": "SITE_HELP"  // "SITE_HELP" | "RESULTS_HELP" | "CUSTOM"
+ *     "mode": "SITE_HELP", // "SITE_HELP" | "RESULTS_HELP" | "MEDICAL_ASSISTANT" | "CUSTOM"
+ *     "section": "CONSENT_OVERVIEW" // only for MEDICAL_ASSISTANT mode
  *   }
  *
  * Expected response (200):
@@ -59,7 +58,24 @@ divided into low, moderate, and high categories. This score is based on vocal
 biomarkers such as jitter, shimmer, and harmonics-to-noise ratio.
 Remember: this is a screening tool only and does not diagnose any medical condition.`;
 
-type TTSMode = "SITE_HELP" | "RESULTS_HELP" | "CUSTOM";
+const MEDICAL_ASSISTANT_SCRIPTS = {
+  CONSENT_OVERVIEW: `Hello. I am your Voxidria medical assistant.
+Voxidria is a voice-based screening tool that analyzes short voice tasks for speech biomarkers linked to neurological changes.
+Before recording, please confirm you understand that your voice sample will be securely stored and analyzed to generate a screening score.
+This score is informational and does not provide a diagnosis. Only a licensed healthcare professional can diagnose a medical condition.
+By continuing, you agree to microphone access and to the secure processing of your recordings for this screening session.`,
+  AHHH_TEST: `For the ahhh test, sit comfortably and keep the microphone about six to eight inches from your mouth.
+Take a deep breath, then say ahhh in one steady tone for about five seconds.
+Try to keep your volume and pitch as stable as possible, and avoid trailing off at the end.`,
+  PA_TA_KA_TEST: `For the pa-ta-ka test, keep the same microphone distance and speak clearly at your natural loudness.
+Repeat pa-ta-ka continuously for about ten seconds, as quickly and accurately as you can.
+Focus on crisp consonants and a steady rhythm without pausing between syllables.`,
+  READING_TEST: `For the reading task, read the passage out loud at a comfortable pace and natural volume.
+Keep your pronunciation clear and avoid whispering. If you make a small mistake, keep going.`,
+} as const;
+
+type TTSMode = "SITE_HELP" | "RESULTS_HELP" | "MEDICAL_ASSISTANT" | "CUSTOM";
+type MedicalAssistantSection = keyof typeof MEDICAL_ASSISTANT_SCRIPTS;
 
 serve(async (req: Request) => {
   const corsResponse = handleCors(req);
@@ -91,20 +107,31 @@ serve(async (req: Request) => {
       return respondError("Invalid JSON body", 400);
     }
 
-    const { text, mode } = body;
+    const { text, mode, section } = body;
     const ttsMode = (mode as TTSMode) ?? "CUSTOM";
 
-    const validModes: TTSMode[] = ["SITE_HELP", "RESULTS_HELP", "CUSTOM"];
+    const validModes: TTSMode[] = ["SITE_HELP", "RESULTS_HELP", "MEDICAL_ASSISTANT", "CUSTOM"];
     if (!validModes.includes(ttsMode)) {
       return respondError(`mode must be one of: ${validModes.join(", ")}`, 400);
     }
 
     // Determine the text to synthesize
     let synthesisText: string;
+    let voiceIdOverride: string | undefined;
     if (ttsMode === "SITE_HELP") {
       synthesisText = SITE_HELP_SCRIPT;
     } else if (ttsMode === "RESULTS_HELP") {
       synthesisText = RESULTS_HELP_SCRIPT;
+    } else if (ttsMode === "MEDICAL_ASSISTANT") {
+      const sectionInput = typeof section === "string" ? section : "CONSENT_OVERVIEW";
+      const requestedSection = sectionInput.toUpperCase();
+      const medicalSection = requestedSection as MedicalAssistantSection;
+      if (!(medicalSection in MEDICAL_ASSISTANT_SCRIPTS)) {
+        const validSections = Object.keys(MEDICAL_ASSISTANT_SCRIPTS).join(", ");
+        return respondError(`section must be one of: ${validSections}`, 400);
+      }
+      synthesisText = MEDICAL_ASSISTANT_SCRIPTS[medicalSection];
+      voiceIdOverride = Deno.env.get("ELEVENLABS_MEDICAL_ASSISTANT_VOICE_ID") ?? undefined;
     } else {
       // CUSTOM mode: use provided text
       if (!text || typeof text !== "string") {
@@ -114,7 +141,10 @@ serve(async (req: Request) => {
     }
 
     // Call ElevenLabs — API key stays server-side in synthesizeSpeech()
-    const audioBytes = await synthesizeSpeech({ text: synthesisText });
+    const audioBytes = await synthesizeSpeech({
+      text: synthesisText,
+      voice_id: voiceIdOverride,
+    });
 
     logInfo(
       {
@@ -123,7 +153,7 @@ serve(async (req: Request) => {
         user_id: userId,
         latency_ms: Date.now() - startTime,
       },
-      `TTS synthesized: mode=${ttsMode}, chars=${synthesisText.length}`
+      `TTS synthesized: mode=${ttsMode}, section=${String(section ?? "")}, chars=${synthesisText.length}`
     );
 
     // Return raw audio bytes — client plays this directly

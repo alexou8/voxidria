@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import {
@@ -7,6 +7,7 @@ import {
   uploadAudioToStorage,
   finalizeTask,
   READING_PASSAGE,
+  synthesizeSpeech,
 } from "../services/api";
 import ResultsCard from "../components/ResultsCard";
 import "./RecordPage.css";
@@ -16,7 +17,7 @@ const TASKS = [
     type: "SUSTAINED_VOWEL",
     title: "Sustained Vowel",
     durationSeconds: 5,
-    instruction: 'Take a deep breath and say the vowel "aaa" for about 5 seconds, as steadily as you can.',
+    instruction: 'Take a deep breath and say "ahhh" for about 5 seconds, as steadily as you can.',
     icon: "🎵",
   },
   {
@@ -38,21 +39,103 @@ const TASKS = [
 
 // Step identifiers for the flow
 const STEPS = { CONSENT: "consent", TASK: "task", UPLOADING: "uploading", RESULTS: "results" };
+const TASK_GUIDE_SECTION = {
+  SUSTAINED_VOWEL: "AHHH_TEST",
+  READING: "READING_TEST",
+  DDK: "PA_TA_KA_TEST",
+};
+const TASK_GUIDE_LABEL = {
+  SUSTAINED_VOWEL: 'Hear "ahhh" instructions',
+  READING: "Hear reading instructions",
+  DDK: 'Hear "pa-ta-ka" instructions',
+};
 
 export default function RecordPage() {
   const { getAccessTokenSilently } = useAuth0();
   const recorder = useVoiceRecorder();
+  const guideAudioRef = useRef(null);
+  const latestGuideRequestId = useRef(0);
 
   const [step, setStep] = useState(STEPS.CONSENT);
   const [selectedTask, setSelectedTask] = useState(TASKS[1]); // default: READING
   const [sessionId, setSessionId] = useState(null);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
+  const [guideAudioUrl, setGuideAudioUrl] = useState("");
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [guideError, setGuideError] = useState(null);
+
+  useEffect(() => {
+    if (!guideAudioUrl || !guideAudioRef.current) return;
+    guideAudioRef.current.currentTime = 0;
+    guideAudioRef.current.play().catch(() => {
+      // Some browsers require explicit user interaction for playback.
+    });
+  }, [guideAudioUrl]);
+
+  useEffect(
+    () => () => {
+      if (guideAudioRef.current) {
+        guideAudioRef.current.pause();
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      if (guideAudioUrl) {
+        URL.revokeObjectURL(guideAudioUrl);
+      }
+    };
+  }, [guideAudioUrl]);
 
   const formatDuration = (seconds) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const resetGuide = () => {
+    latestGuideRequestId.current += 1;
+    if (guideAudioRef.current) {
+      guideAudioRef.current.pause();
+      guideAudioRef.current.currentTime = 0;
+    }
+    setGuideAudioUrl("");
+    setGuideLoading(false);
+    setGuideError(null);
+  };
+
+  const playMedicalAssistant = async (section) => {
+    const requestId = latestGuideRequestId.current + 1;
+    latestGuideRequestId.current = requestId;
+
+    if (guideAudioRef.current) {
+      guideAudioRef.current.pause();
+      guideAudioRef.current.currentTime = 0;
+    }
+
+    setGuideError(null);
+    setGuideLoading(true);
+
+    try {
+      const audioBlob = await synthesizeSpeech(
+        "",
+        "MEDICAL_ASSISTANT",
+        getAccessTokenSilently,
+        { section }
+      );
+      if (latestGuideRequestId.current !== requestId) return;
+      setGuideAudioUrl(URL.createObjectURL(audioBlob));
+    } catch (err) {
+      if (latestGuideRequestId.current !== requestId) return;
+      setGuideError(err.message || "Could not load medical assistant audio.");
+    } finally {
+      if (latestGuideRequestId.current === requestId) {
+        setGuideLoading(false);
+      }
+    }
   };
 
   const handleConsent = async () => {
@@ -64,6 +147,7 @@ export default function RecordPage() {
         screenWidth: window.screen.width,
       };
       const data = await createSession("1.0", deviceMeta, getAccessTokenSilently);
+      resetGuide();
       setSessionId(data.session_id);
       setStep(STEPS.TASK);
     } catch (err) {
@@ -111,6 +195,7 @@ export default function RecordPage() {
   };
 
   const handleReset = () => {
+    resetGuide();
     recorder.reset();
     setResults(null);
     setError(null);
@@ -118,6 +203,7 @@ export default function RecordPage() {
   };
 
   const handleStartOver = () => {
+    resetGuide();
     recorder.reset();
     setResults(null);
     setError(null);
@@ -146,6 +232,24 @@ export default function RecordPage() {
               Parkinson's disease or any other condition. If you are concerned
               about your health, please consult a qualified healthcare
               professional.
+            </div>
+            <div className="assistant-guide">
+              <button
+                className="btn btn-outline"
+                onClick={() => playMedicalAssistant("CONSENT_OVERVIEW")}
+                disabled={guideLoading}
+              >
+                {guideLoading ? "Loading assistant..." : "Hear Medical Assistant Overview"}
+              </button>
+              {guideAudioUrl && (
+                <audio
+                  ref={guideAudioRef}
+                  className="audio-preview"
+                  controls
+                  src={guideAudioUrl}
+                />
+              )}
+              {guideError && <p className="error-msg">{guideError}</p>}
             </div>
           </div>
           {error && <p className="error-msg">{error}</p>}
@@ -220,6 +324,24 @@ export default function RecordPage() {
             "{selectedTask.passage}"
           </blockquote>
         )}
+        <div className="assistant-guide">
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => playMedicalAssistant(TASK_GUIDE_SECTION[selectedTask.type])}
+            disabled={guideLoading}
+          >
+            {guideLoading ? "Loading assistant..." : TASK_GUIDE_LABEL[selectedTask.type]}
+          </button>
+          {guideAudioUrl && (
+            <audio
+              ref={guideAudioRef}
+              className="audio-preview"
+              controls
+              src={guideAudioUrl}
+            />
+          )}
+          {guideError && <p className="error-msg">{guideError}</p>}
+        </div>
       </div>
 
       {/* Recorder controls */}

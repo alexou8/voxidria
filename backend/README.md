@@ -142,6 +142,7 @@ supabase secrets set GEMINI_API_KEY=AIza...
 supabase secrets set GEMINI_MODEL=gemini-1.5-pro
 supabase secrets set ELEVENLABS_API_KEY=sk_...
 supabase secrets set ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+supabase secrets set ELEVENLABS_MEDICAL_ASSISTANT_VOICE_ID=<optional-voice-id>
 supabase secrets set ELEVENLABS_MODEL_ID=eleven_multilingual_v2
 supabase secrets set ALLOWED_ORIGIN=https://your-frontend.vercel.app
 ```
@@ -288,7 +289,11 @@ curl -X POST https://<project>.supabase.co/functions/v1/elevenlabs-tts \
   --output help-audio.mp3
 ```
 
-Modes: `SITE_HELP` (landing page explanation), `RESULTS_HELP` (results page explanation), `CUSTOM` (requires `text` field).
+Modes:
+- `SITE_HELP` (landing page explanation)
+- `RESULTS_HELP` (results page explanation)
+- `MEDICAL_ASSISTANT` (scripted instructions and consent guidance). Optional body field: `section` = `CONSENT_OVERVIEW` | `AHHH_TEST` | `PA_TA_KA_TEST` | `READING_TEST`
+- `CUSTOM` (requires `text` field)
 
 Response: `audio/mpeg` binary
 
