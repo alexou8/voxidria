@@ -1,6 +1,7 @@
 import parselmouth
 import numpy as np
 
+
 def _safe_float(x, default=0.0):
     try:
         if x is None:
@@ -12,27 +13,58 @@ def _safe_float(x, default=0.0):
     except Exception:
         return float(default)
 
-def extract_uci16(audio_path: str, f0min: float = 75, f0max: float = 500) -> dict:
+
+def _pitch_from_parselmouth(snd, f0min: float, f0max: float):
+    pitch = parselmouth.praat.call(
+        snd,
+        "To Pitch (cc)",
+        0.0,   # time step
+        f0min,
+        f0max,
+        15,    # max number of candidates
+        0,     # very accurate (no)
+        0.03,  # silence threshold
+        0.45,  # voicing threshold
+        0.01,  # octave cost
+        0.35,  # octave-jump cost
+        0.14   # voiced/unvoiced cost
+    )
+    voiced = parselmouth.praat.call(pitch, "Count voiced frames")
+    if voiced == 0:
+        return None, voiced
+
+    fo = parselmouth.praat.call(pitch, "Get mean", 0, 0, "Hertz")
+    fhi = parselmouth.praat.call(pitch, "Get maximum", 0, 0, "Hertz", "Parabolic")
+    flo = parselmouth.praat.call(pitch, "Get minimum", 0, 0, "Hertz", "Parabolic")
+    return (float(fo), float(fhi), float(flo)), voiced
+
+
+def _pitch_from_librosa(audio_path: str, f0min: float, f0max: float, sr: int | None = None):
+    try:
+        import librosa
+    except Exception:
+        return None
+
+    y, sr = librosa.load(audio_path, sr=sr, mono=True)
+    f0, _, _ = librosa.pyin(y, fmin=f0min, fmax=f0max, sr=sr)
+    f0 = f0[~np.isnan(f0)]
+    if f0.size == 0:
+        return None
+    return float(np.mean(f0)), float(np.max(f0)), float(np.min(f0))
+
+
+def extract_uci16(audio_path: str, f0min: float = 50, f0max: float = 600) -> dict:
     snd = parselmouth.Sound(audio_path)
 
-    # -------------------
-    # Pitch stats (Fo, Fhi, Flo)
-    # -------------------
-    try:
-        pitch = parselmouth.praat.call(
-    snd,
-    "To Pitch (cc)",
-    0.0,
-    50,     # lower floor
-    600     # higher ceiling
-)
-        n_voiced = parselmouth.praat.call(pitch, "Count voiced frames")
-        print("Voiced frames:", n_voiced)
-        fo = parselmouth.praat.call(pitch, "Get mean", 0, 0, "Hertz")
-        fhi = parselmouth.praat.call(pitch, "Get maximum", 0, 0, "Hertz", "Parabolic")
-        flo = parselmouth.praat.call(pitch, "Get minimum", 0, 0, "Hertz", "Parabolic")
-    except Exception:
-        fo, fhi, flo = 0.0, 0.0, 0.0
+    res, voiced = _pitch_from_parselmouth(snd, f0min, f0max)
+    print("Voiced frames:", voiced)
+    if res is None:
+        res = _pitch_from_librosa(audio_path, f0min, f0max)
+
+    if res is None:
+        fo = fhi = flo = np.nan
+    else:
+        fo, fhi, flo = res
 
     # -------------------
     # PointProcess for jitter/shimmer
@@ -56,10 +88,10 @@ def extract_uci16(audio_path: str, f0min: float = 75, f0max: float = 500) -> dic
     if pp is not None:
         try:
             jitter_local = parselmouth.praat.call(pp, "Get jitter (local)", t1, t2, period_floor, period_ceiling, max_period_factor)
-            jitter_abs   = parselmouth.praat.call(pp, "Get jitter (local, absolute)", t1, t2, period_floor, period_ceiling, max_period_factor)
-            rap          = parselmouth.praat.call(pp, "Get jitter (rap)", t1, t2, period_floor, period_ceiling, max_period_factor)
-            ppq          = parselmouth.praat.call(pp, "Get jitter (ppq5)", t1, t2, period_floor, period_ceiling, max_period_factor)
-            ddp          = parselmouth.praat.call(pp, "Get jitter (ddp)", t1, t2, period_floor, period_ceiling, max_period_factor)
+            jitter_abs = parselmouth.praat.call(pp, "Get jitter (local, absolute)", t1, t2, period_floor, period_ceiling, max_period_factor)
+            rap = parselmouth.praat.call(pp, "Get jitter (rap)", t1, t2, period_floor, period_ceiling, max_period_factor)
+            ppq = parselmouth.praat.call(pp, "Get jitter (ppq5)", t1, t2, period_floor, period_ceiling, max_period_factor)
+            ddp = parselmouth.praat.call(pp, "Get jitter (ddp)", t1, t2, period_floor, period_ceiling, max_period_factor)
         except Exception:
             pass
 
@@ -70,11 +102,11 @@ def extract_uci16(audio_path: str, f0min: float = 75, f0max: float = 500) -> dic
     if pp is not None:
         try:
             shimmer_local = parselmouth.praat.call([snd, pp], "Get shimmer (local)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
-            shimmer_db    = parselmouth.praat.call([snd, pp], "Get shimmer (local_dB)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
-            apq3          = parselmouth.praat.call([snd, pp], "Get shimmer (apq3)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
-            apq5          = parselmouth.praat.call([snd, pp], "Get shimmer (apq5)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
-            apq11         = parselmouth.praat.call([snd, pp], "Get shimmer (apq11)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
-            dda           = parselmouth.praat.call([snd, pp], "Get shimmer (dda)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
+            shimmer_db = parselmouth.praat.call([snd, pp], "Get shimmer (local_dB)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
+            apq3 = parselmouth.praat.call([snd, pp], "Get shimmer (apq3)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
+            apq5 = parselmouth.praat.call([snd, pp], "Get shimmer (apq5)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
+            apq11 = parselmouth.praat.call([snd, pp], "Get shimmer (apq11)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
+            dda = parselmouth.praat.call([snd, pp], "Get shimmer (dda)", t1, t2, period_floor, period_ceiling, max_period_factor, max_amp_factor)
         except Exception:
             pass
 
@@ -90,7 +122,7 @@ def extract_uci16(audio_path: str, f0min: float = 75, f0max: float = 500) -> dic
     except Exception:
         pass
 
-    # Proxy NHR from HNR (not perfect, but stable). If you want “true Praat NHR”, tell me and I’ll implement it.
+    # Proxy NHR from HNR (not perfect, but stable). If you want true Praat NHR, tell me and I'll implement it.
     nhr = 0.0
     try:
         hnr_val = _safe_float(hnr, 0.0)
@@ -100,9 +132,9 @@ def extract_uci16(audio_path: str, f0min: float = 75, f0max: float = 500) -> dic
 
     return {
         # Pitch
-        "MDVP:Fo(Hz)": _safe_float(fo),
-        "MDVP:Fhi(Hz)": _safe_float(fhi),
-        "MDVP:Flo(Hz)": _safe_float(flo),
+        "MDVP:Fo(Hz)": _safe_float(fo, np.nan),
+        "MDVP:Fhi(Hz)": _safe_float(fhi, np.nan),
+        "MDVP:Flo(Hz)": _safe_float(flo, np.nan),
 
         # Jitter
         "MDVP:Jitter(%)": _safe_float(jitter_local),
