@@ -158,10 +158,15 @@ export async function deleteSession(sessionId, getToken) {
  * Returns an audio/mpeg Blob for browser playback.
  * The ELEVENLABS_API_KEY stays server-side — this function only sends text.
  */
-export async function synthesizeSpeech(text, mode = "CUSTOM", getToken) {
+export async function synthesizeSpeech(text, mode = "CUSTOM", getToken, options = {}) {
   const token = await getToken({
     authorizationParams: { audience: import.meta.env.VITE_AUTH0_AUDIENCE },
   });
+
+  const body = { text, mode };
+  if (options.section) {
+    body.section = options.section;
+  }
 
   const res = await fetch(`${FUNCTIONS_BASE}/elevenlabs-tts`, {
     method: "POST",
@@ -169,7 +174,7 @@ export async function synthesizeSpeech(text, mode = "CUSTOM", getToken) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ text, mode }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
