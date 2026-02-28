@@ -159,6 +159,6 @@ def extract_uci16(audio_path: str, f0min: float = 50, f0max: float = 600) -> dic
 
 # Quick test
 if __name__ == "__main__":
-    feats = extract_uci16("server/data/healthy_control.wav")  # adjust path
+    feats = extract_uci16("data/healthy_control.wav")
     for k in sorted(feats.keys()):
         print(f"{k:16s} = {feats[k]}")
