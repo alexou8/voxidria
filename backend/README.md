@@ -1,6 +1,6 @@
 # Voxidria Backend
 
-Backend for Voxidria — a Parkinson's speech-risk screening platform using Auth0, Supabase, Gemini, and ElevenLabs.
+Backend for Voxidria — a Parkinson's speech-risk screening platform using Auth0, Supabase, OpenAI, Gemini, and ElevenLabs.
 
 > **Medical Disclaimer**: Voxidria is a screening tool only. It does not diagnose Parkinson's disease or any other medical condition. Always consult a qualified healthcare professional about health concerns.
 
@@ -18,6 +18,7 @@ Supabase Edge Functions  ← Public API layer (never exposes secrets)
         │
         ├── Supabase Postgres  (users, sessions, tasks, predictions)
         ├── Supabase Storage   (private audio bucket)
+        ├── OpenAI API         (chatbot assistant)
         ├── Gemini API         (reading task analysis)
         ├── ElevenLabs API     (text-to-speech accessibility)
         └── Inference Service  (optional: Python/FastAPI ML pipeline)
@@ -60,6 +61,7 @@ backend/
 │       ├── get-session/              # GET  — fetch session + tasks + predictions
 │       ├── list-sessions/            # GET  — list user's sessions (dashboard)
 │       ├── delete-session/           # DELETE — remove session + audio files
+│       ├── chatbot/                  # POST — assistant chat (OpenAI)
 │       └── elevenlabs-tts/           # POST — accessibility TTS endpoint
 ├── .env.example                      # All required environment variables
 └── README.md                         # This file
@@ -73,6 +75,7 @@ backend/
 - [Supabase CLI](https://supabase.com/docs/guides/cli) (`npm install -g supabase`)
 - [Deno](https://deno.land/) (for running Edge Functions locally)
 - Auth0 account + tenant
+- OpenAI account (API key for chatbot)
 - Google AI Studio account (Gemini API key)
 - ElevenLabs account (API key + voice ID)
 
@@ -125,6 +128,7 @@ supabase functions deploy finalize-task --no-verify-jwt
 supabase functions deploy get-session --no-verify-jwt
 supabase functions deploy list-sessions --no-verify-jwt
 supabase functions deploy delete-session --no-verify-jwt
+supabase functions deploy chatbot --no-verify-jwt
 supabase functions deploy elevenlabs-tts --no-verify-jwt
 ```
 
@@ -138,6 +142,8 @@ supabase secrets set AUTH0_AUDIENCE=https://voxidria-api
 supabase secrets set AUTH0_ISSUER_BASE_URL=https://your-tenant.us.auth0.com/
 supabase secrets set SUPABASE_URL=https://your-project.supabase.co
 supabase secrets set SUPABASE_SERVICE_ROLE_KEY=eyJh...
+supabase secrets set OPENAI_API_KEY=sk-proj-...
+supabase secrets set OPENAI_MODEL=gpt-4o-mini
 supabase secrets set GEMINI_API_KEY=AIza...
 supabase secrets set GEMINI_MODEL=gemini-1.5-pro
 supabase secrets set ELEVENLABS_API_KEY=sk_...
@@ -304,6 +310,7 @@ Response: `audio/mpeg` binary
 | Secret | Where used | Frontend safe? |
 |--------|-----------|---------------|
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions only | ❌ Never |
+| `OPENAI_API_KEY` | Edge Functions only | ❌ Never |
 | `GEMINI_API_KEY` | Edge Functions only | ❌ Never |
 | `ELEVENLABS_API_KEY` | Edge Functions only | ❌ Never |
 | `SUPABASE_ANON_KEY` | Frontend SDK | ✅ Yes |
