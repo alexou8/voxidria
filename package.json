@@ -4,8 +4,8 @@
   "private": true,
   "description": "Voice-based Parkinson's risk estimation platform",
   "scripts": {
-    "dev": "cd client && npm run dev",
-    "install:all": "cd client && npm install",
-    "build": "cd client && npm run build"
+    "dev": "cd frontend && npm run dev",
+    "install:all": "cd frontend && npm install",
+    "build": "cd frontend && npm run build"
   }
 }
