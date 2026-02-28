@@ -147,6 +147,13 @@ supabase secrets set ELEVENLABS_MODEL_ID=eleven_multilingual_v2
 supabase secrets set ALLOWED_ORIGIN=https://your-frontend.vercel.app
 ```
 
+Or use the helper script to load values from `backend/.env`:
+
+```bash
+cd backend
+PROJECT_REF=<your-project-ref> ./scripts/set-supabase-secrets.sh
+```
+
 ---
 
 ## Running Locally
@@ -163,6 +170,31 @@ supabase functions serve --env-file .env
 ```
 
 The local Edge Function URL will be: `http://localhost:54321/functions/v1/<function-name>`
+
+---
+
+## ElevenLabs Medical Assistant Setup
+
+1. Ensure `backend/.env` includes:
+   - `ELEVENLABS_API_KEY`
+   - `ELEVENLABS_VOICE_ID`
+   - `ELEVENLABS_MODEL_ID`
+   - optional `ELEVENLABS_MEDICAL_ASSISTANT_VOICE_ID`
+2. Push secrets + deploy function:
+
+```bash
+cd backend
+PROJECT_REF=<your-project-ref> ./scripts/set-supabase-secrets.sh
+```
+
+3. Run smoke test (requires a valid Auth0 access token for your API):
+
+```bash
+cd backend
+AUTH0_TOKEN="<jwt>" ./scripts/test-medical-assistant-tts.sh
+```
+
+Expected output: 3 mp3 files generated for `CONSENT_OVERVIEW`, `AHHH_TEST`, and `PA_TA_KA_TEST`.
 
 ---
 
