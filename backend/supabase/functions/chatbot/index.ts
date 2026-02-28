@@ -3,7 +3,7 @@
  *
  * Purpose:
  *   Handles chat messages from authenticated users and returns AI responses
- *   using the Google Gemini API. The chatbot (Vox) answers questions about the
+ *   using the OpenAI API. The chatbot (Vox) answers questions about the
  *   Voxidria platform: how to use it, what the voice tasks are, how data is
  *   stored and used, privacy information, and results interpretation.
  *
@@ -23,7 +23,7 @@
  *   { "response": "Here's how to use Voxidria..." }
  *
  * Secrets used (server-side only):
- *   GEMINI_API_KEY — never exposed to the client.
+ *   OPENAI_API_KEY — never exposed to the client.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -56,7 +56,7 @@ const SYSTEM_PROMPT = `You are Vox, a friendly and knowledgeable assistant for t
 **How your data is used:**
 - Voice recordings and transcripts are stored securely in encrypted cloud storage (Supabase)
 - Data is linked to your user account and is private — only you can access it
-- Recordings are analyzed by AI (Google Gemini) and machine learning models to generate screening results
+- Recordings are analyzed by AI and machine learning models to generate screening results
 - Your data is used only for screening purposes and is not shared with third parties without your consent
 - You can delete any session and all its associated data from the Dashboard at any time
 
@@ -108,63 +108,63 @@ serve(async (req: Request) => {
       return respond({ error: "message is required" }, 400);
     }
 
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    const geminiModel = Deno.env.get("GEMINI_MODEL") ?? "gemini-1.5-pro";
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    const openaiModel = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
 
-    if (!geminiApiKey) {
-      return respond({ error: "Gemini API not configured" }, 500);
+    if (!openaiApiKey) {
+      return respond({ error: "OpenAI API not configured" }, 500);
     }
 
-    // Build conversation history for Gemini multi-turn chat
-    const conversationHistory = Array.isArray(history) ? history : [];
-    const contents = [
-      ...conversationHistory
-        .filter((msg: unknown) => typeof (msg as Record<string, unknown>).role === "string" && typeof (msg as Record<string, unknown>).content === "string")
-        .map((msg: unknown) => {
-          const m = msg as { role: string; content: string };
-          return {
-            role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: m.content }],
-          };
-        }),
-      {
-        role: "user",
-        parts: [{ text: message.trim() }],
-      },
-    ];
+    // Build a safe message list for OpenAI multi-turn chat.
+    const rawHistory = Array.isArray(history) ? history : [];
+    const validHistory = rawHistory.filter(
+      (msg: unknown) =>
+        typeof (msg as Record<string, unknown>).role === "string" &&
+        typeof (msg as Record<string, unknown>).content === "string"
+    ) as { role: string; content: string }[];
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
+    const chatHistory = validHistory
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+    const openaiResponse = await fetch(
+      "https://api.openai.com/v1/chat/completions",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openaiApiKey}`,
+        },
         body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: SYSTEM_PROMPT }],
-          },
-          contents,
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 512,
-          },
+          model: openaiModel,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            ...chatHistory,
+            { role: "user", content: message.trim() },
+          ],
+          temperature: 0.7,
+          max_tokens: 512,
         }),
       }
     );
 
-    if (!geminiResponse.ok) {
-      const errText = await geminiResponse.text();
+    if (!openaiResponse.ok) {
+      const errText = await openaiResponse.text();
       logError(
         { request_id: requestId, function_name: FUNCTION_NAME },
-        "Gemini API error",
+        "OpenAI API error",
         errText
       );
-      return respond({ error: "Failed to get response from AI" }, 502);
+      return respond({ error: `OpenAI error: ${errText}` }, 502);
     }
 
-    const geminiData = await geminiResponse.json();
-    const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    const openaiData = await openaiResponse.json();
+    const responseText = openaiData.choices?.[0]?.message?.content;
 
-    if (!responseText) {
+    if (!responseText || typeof responseText !== "string") {
       return respond({ error: "Empty response from AI" }, 502);
     }
 

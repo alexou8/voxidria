@@ -30,6 +30,8 @@ read -rsp "SUPABASE_SERVICE_ROLE_KEY: " SUPABASE_SERVICE_ROLE_KEY
 echo ""
 read -rsp "SUPABASE_ANON_KEY: " SUPABASE_ANON_KEY
 echo ""
+read -rsp "OPENAI_API_KEY (chatbot): " OPENAI_API_KEY
+echo ""
 read -rsp "GEMINI_API_KEY: " GEMINI_API_KEY
 echo ""
 read -rsp "ELEVENLABS_API_KEY: " ELEVENLABS_API_KEY
@@ -44,6 +46,8 @@ supabase secrets set \
   SUPABASE_URL=https://ugmgrncvxkeaazzwizki.supabase.co \
   SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
   SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
+  OPENAI_API_KEY="$OPENAI_API_KEY" \
+  OPENAI_MODEL=gpt-4o-mini \
   GEMINI_API_KEY="$GEMINI_API_KEY" \
   GEMINI_MODEL=gemini-1.5-pro \
   ELEVENLABS_API_KEY="$ELEVENLABS_API_KEY" \

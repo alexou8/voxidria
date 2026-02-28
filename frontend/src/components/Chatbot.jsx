@@ -48,7 +48,8 @@ export default function Chatbot() {
         ...prev,
         { role: "assistant", content: data.response },
       ]);
-    } catch {
+    } catch (err) {
+      console.error("[Chatbot] sendChatMessage failed:", err);
       setMessages((prev) => [
         ...prev,
         {
