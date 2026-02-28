@@ -4,6 +4,7 @@ import Header from "./components/Header";
 import LandingPage from "./pages/LandingPage";
 import DashboardPage from "./pages/DashboardPage";
 import RecordPage from "./pages/RecordPage";
+import Chatbot from "./components/Chatbot";
 
 export default function App() {
   const { isAuthenticated, isLoading } = useAuth0();
@@ -32,6 +33,7 @@ export default function App() {
           />
         </Routes>
       </main>
+      <Chatbot />
     </>
   );
 }
