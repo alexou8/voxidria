@@ -1,0 +1,49 @@
+# Supabase local development configuration
+# See: https://supabase.com/docs/guides/cli/config
+
+[api]
+port = 54321
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+port = 54323
+
+[inbucket]
+port = 54324
+
+[storage]
+file_size_limit = "50MiB"
+
+[auth]
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+jwt_expiry = 3600
+enable_signup = true
+
+[functions.create-session]
+verify_jwt = false  # We verify Auth0 JWT manually in the function
+
+[functions.upload-url]
+verify_jwt = false
+
+[functions.finalize-task]
+verify_jwt = false
+
+[functions.get-session]
+verify_jwt = false
+
+[functions.list-sessions]
+verify_jwt = false
+
+[functions.delete-session]
+verify_jwt = false
+
+[functions.elevenlabs-tts]
+verify_jwt = false
