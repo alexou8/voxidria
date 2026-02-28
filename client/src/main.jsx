@@ -17,7 +17,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         clientId={clientId || "YOUR_AUTH0_CLIENT_ID"}
         authorizationParams={{
           redirect_uri: window.location.origin,
-          audience: audience || "https://voxidria-api",
+          audience: audience || "voxidria",
         }}
       >
         <App />
