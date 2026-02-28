@@ -1,6 +1,7 @@
 import numpy as np
 import joblib
 from tensorflow import keras
+from pathlib import Path
 
 MODEL_PATH = "ml/artifacts/parkinsons_model.h5"
 SCALER_PATH = "ml/artifacts/scaler.joblib"
