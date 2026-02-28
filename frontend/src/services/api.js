@@ -184,3 +184,18 @@ export async function synthesizeSpeech(text, mode = "CUSTOM", getToken, options 
 
   return res.blob();
 }
+
+/**
+ * Send a chat message to the Vox chatbot.
+ * Returns { response: "AI-generated response..." }
+ */
+export async function sendChatMessage(message, history, getToken) {
+  return callFunction(
+    "/chatbot",
+    {
+      method: "POST",
+      body: JSON.stringify({ message, history }),
+    },
+    getToken
+  );
+}
