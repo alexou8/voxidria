@@ -3,6 +3,24 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import Image from "next/image";
 
+const READING_SENTENCES = {
+  en: {
+    label: "English",
+    flag: "🇬🇧",
+    text: "The quick brown fox jumps over the lazy dog near the river bank.",
+  },
+  zh: {
+    label: "Mandarin",
+    flag: "🇨🇳",
+    text: "那只敏捷的棕色狐狸跳过了河边懒惰的狗。",
+  },
+  hi: {
+    label: "Hindi",
+    flag: "🇮🇳",
+    text: "तेज़ भूरी लोमड़ी नदी के किनारे आलसी कुत्ते के ऊपर से कूद गई।",
+  },
+};
+
 const TASKS = [
   {
     id: "sustain",
@@ -12,7 +30,7 @@ const TASKS = [
     detail: "Hold the vowel sound for at least 5 seconds in a quiet environment. Keep a steady volume and pitch. Do not stop and restart.",
     duration: 5,
     icon: "🎙",
-    prompt: '"Ahhh..."',
+    skippable: true,
   },
   {
     id: "reading",
@@ -22,20 +40,22 @@ const TASKS = [
     detail: "Read the sentence clearly, as you would in normal conversation. Do not rush or slow down artificially.",
     duration: 8,
     icon: "📖",
-    prompt: '"The quick brown fox jumps over the lazy dog near the river bank."',
+    skippable: false,
   },
 ];
 
 export default function Record() {
   const router = useRouter();
-  const [currentTask, setCurrentTask]     = useState(0);
-  const [phase, setPhase]                 = useState("intro");
-  const [isRecording, setIsRecording]     = useState(false);
-  const [elapsed, setElapsed]             = useState(0);
-  const [recordings, setRecordings]       = useState({});
-  const [bars, setBars]                   = useState(Array(24).fill(4));
+  const [currentTask, setCurrentTask]       = useState(0);
+  const [phase, setPhase]                   = useState("intro");
+  const [isRecording, setIsRecording]       = useState(false);
+  const [elapsed, setElapsed]               = useState(0);
+  const [recordings, setRecordings]         = useState({});
+  const [bars, setBars]                     = useState(Array(24).fill(4));
   const [consentChecked, setConsentChecked] = useState(false);
-  const [uploadError, setUploadError]     = useState(null);
+  const [uploadError, setUploadError]       = useState(null);
+  const [language, setLanguage]             = useState("en");
+  const [showLangPicker, setShowLangPicker] = useState(false);
 
   const mediaRef     = useRef(null);
   const chunksRef    = useRef([]);
@@ -45,6 +65,16 @@ export default function Record() {
   const streamRef    = useRef(null);
 
   const task = TASKS[currentTask];
+  const isReadingTask = task?.id === "reading";
+  const sentence = READING_SENTENCES[language];
+
+  // Show language picker when arriving at reading task
+  useEffect(() => {
+    if (task?.id === "reading" && phase === "recording") {
+      // eslint-disable-next-line
+      setShowLangPicker(true);
+    }
+  }, [currentTask, phase, task?.id]);
 
   useEffect(() => {
     if (!isRecording) {
@@ -122,6 +152,11 @@ export default function Record() {
     }
   }
 
+  function skipTask() {
+    setCurrentTask(t => t + 1);
+    setElapsed(0);
+  }
+
   async function uploadAll() {
     try {
       // TODO: Replace with real upload to your FastAPI backend
@@ -166,6 +201,7 @@ export default function Record() {
         @keyframes pulse   { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
         @keyframes spin    { to{transform:rotate(360deg)} }
         @keyframes ripple  { 0%{transform:scale(0.9);opacity:1} 100%{transform:scale(2.5);opacity:0} }
+        @keyframes slideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
         .fade-up { animation: fadeUp 0.5s ease both; }
 
         nav {
@@ -186,7 +222,6 @@ export default function Record() {
 
         main { max-width: 660px; margin: 0 auto; padding: 3rem 2rem; }
 
-        /* Stepper */
         .stepper { display: flex; margin-bottom: 2.5rem; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--white); }
         .step-item { flex: 1; padding: 0.85rem 1rem; display: flex; align-items: center; gap: 0.6rem; font-size: 0.8rem; font-weight: 600; border-right: 1px solid var(--border); transition: all 0.25s; color: var(--muted); }
         .step-item:last-child { border-right: none; }
@@ -197,20 +232,64 @@ export default function Record() {
         .step-item.done   .step-num { background: rgba(33,230,193,0.2); color: var(--green); }
         .step-item.pending .step-num { background: var(--slate); color: var(--muted); border: 1px solid var(--border); }
 
-        /* Task card */
         .task-card { background: var(--white); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 2px 12px rgba(26,46,68,0.07); }
         .task-header { padding: 1.8rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, rgba(26,46,68,0.03), rgba(33,230,193,0.04)); }
+        .task-header-top { display: flex; align-items: flex-start; justify-content: space-between; }
         .task-icon { font-size: 2rem; margin-bottom: 0.7rem; }
         .task-title { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.3rem; color: var(--navy); }
         .task-instruction { font-size: 0.82rem; color: #0fa88a; font-weight: 600; }
         .task-body { padding: 1.8rem; }
         .task-detail { font-size: 0.82rem; color: var(--muted); line-height: 1.7; margin-bottom: 1.5rem; }
 
+        /* Skip button */
+        .btn-skip {
+          background: transparent; border: 1.5px solid var(--border); color: var(--muted);
+          padding: 0.4rem 1rem; border-radius: 6px; font-family: var(--font);
+          font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+          white-space: nowrap;
+        }
+        .btn-skip:hover { border-color: var(--warn); color: var(--warn); }
+
+        /* Language picker */
+        .lang-overlay {
+          position: fixed; inset: 0; background: rgba(26,46,68,0.4);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 200; backdrop-filter: blur(4px);
+        }
+        .lang-modal {
+          background: var(--white); border-radius: 16px; padding: 2rem;
+          width: 90%; max-width: 400px; box-shadow: 0 20px 60px rgba(26,46,68,0.2);
+          animation: slideIn 0.3s ease both;
+        }
+        .lang-modal-title { font-size: 1.2rem; font-weight: 800; color: var(--navy); margin-bottom: 0.4rem; }
+        .lang-modal-sub { font-size: 0.82rem; color: var(--muted); margin-bottom: 1.5rem; line-height: 1.5; }
+        .lang-options { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
+        .lang-option {
+          display: flex; align-items: center; gap: 1rem; padding: 0.9rem 1.2rem;
+          border: 1.5px solid var(--border); border-radius: 10px; cursor: pointer;
+          transition: all 0.2s; font-family: var(--font);
+        }
+        .lang-option:hover { border-color: var(--green); background: rgba(33,230,193,0.04); }
+        .lang-option.selected { border-color: var(--green); background: rgba(33,230,193,0.08); }
+        .lang-flag { font-size: 1.5rem; }
+        .lang-name { font-size: 0.9rem; font-weight: 700; color: var(--navy); }
+        .lang-check { margin-left: auto; width: 20px; height: 20px; border-radius: 50%; background: var(--green); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: white; }
+
+        /* Language badge on task */
+        .lang-badge {
+          display: inline-flex; align-items: center; gap: 0.4rem;
+          background: rgba(33,230,193,0.08); border: 1px solid rgba(33,230,193,0.25);
+          color: #0fa88a; padding: 0.3rem 0.8rem; border-radius: 999px;
+          font-size: 0.72rem; font-weight: 700; cursor: pointer; margin-bottom: 1rem;
+          transition: all 0.2s;
+        }
+        .lang-badge:hover { background: rgba(33,230,193,0.15); }
+
         .prompt-box {
           background: linear-gradient(135deg, rgba(26,46,68,0.04), rgba(33,230,193,0.06));
           border: 1px solid rgba(33,230,193,0.25); border-radius: 10px;
           padding: 1.2rem 1.5rem; font-size: 1.15rem; font-weight: 700;
-          color: var(--navy); text-align: center; margin-bottom: 1.8rem; line-height: 1.5;
+          color: var(--navy); text-align: center; margin-bottom: 1.8rem; line-height: 1.6;
         }
 
         .waveform { display: flex; align-items: center; justify-content: center; gap: 4px; height: 64px; margin-bottom: 1.5rem; }
@@ -253,7 +332,6 @@ export default function Record() {
         .btn-submit:hover { opacity: 0.88; transform: translateY(-1px); }
         .btn-submit:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 
-        /* Consent */
         .consent-wrap { background: var(--white); border: 1px solid var(--border); border-radius: 16px; padding: 2.5rem; box-shadow: 0 2px 12px rgba(26,46,68,0.07); }
         .consent-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.4rem; color: var(--navy); }
         .consent-sub { font-size: 0.83rem; color: var(--muted); margin-bottom: 1.8rem; line-height: 1.6; }
@@ -265,12 +343,40 @@ export default function Record() {
         .consent-check input { width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; }
         .consent-check span { font-size: 0.85rem; font-weight: 600; color: var(--navy); line-height: 1.4; }
 
-        /* Uploading */
         .uploading-wrap { text-align: center; padding: 5rem 2rem; }
         .spinner { width: 48px; height: 48px; border: 3px solid var(--border); border-top-color: var(--green); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1.5rem; }
         .uploading-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem; color: var(--navy); }
         .uploading-sub { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
       `}</style>
+
+      {/* LANGUAGE PICKER MODAL */}
+      {showLangPicker && (
+        <div className="lang-overlay" onClick={() => setShowLangPicker(false)}>
+          <div className="lang-modal" onClick={e => e.stopPropagation()}>
+            <div className="lang-modal-title">🌐 Choose your language</div>
+            <div className="lang-modal-sub">
+              Select the language you&apos;d like to read the sentence in.
+              The sentence will automatically change to your chosen language.
+            </div>
+            <div className="lang-options">
+              {Object.entries(READING_SENTENCES).map(([code, lang]) => (
+                <div
+                  key={code}
+                  className={`lang-option ${language === code ? "selected" : ""}`}
+                  onClick={() => setLanguage(code)}
+                >
+                  <span className="lang-flag">{lang.flag}</span>
+                  <span className="lang-name">{lang.label}</span>
+                  {language === code && <span className="lang-check">✓</span>}
+                </div>
+              ))}
+            </div>
+            <button className="btn-submit" onClick={() => setShowLangPicker(false)}>
+              Confirm → {READING_SENTENCES[language].flag} {READING_SENTENCES[language].label}
+            </button>
+          </div>
+        </div>
+      )}
 
       <nav>
         <div className="nav-logo" onClick={() => router.push("/")}>
@@ -285,7 +391,7 @@ export default function Record() {
             <div className="task-icon">🎙</div>
             <div className="consent-title">Before you begin</div>
             <div className="consent-sub">
-              You&apos;ll complete 2 short voice recordings. Each takes under 15 seconds.
+              You&apos;ll complete up to 2 short voice recordings. Each takes under 15 seconds.
               Make sure you&apos;re in a quiet room with your microphone unobstructed.
             </div>
             <ul className="consent-list">
@@ -317,13 +423,36 @@ export default function Record() {
 
             <div className="task-card fade-up">
               <div className="task-header">
-                <div className="task-icon">{task.icon}</div>
-                <div className="task-title">{task.title}</div>
-                <div className="task-instruction">{task.instruction}</div>
+                <div className="task-header-top">
+                  <div>
+                    <div className="task-icon">{task.icon}</div>
+                    <div className="task-title">{task.title}</div>
+                    <div className="task-instruction">{task.instruction}</div>
+                  </div>
+                  {task.skippable && !isRecording && (
+                    <button className="btn-skip" onClick={skipTask}>
+                      Skip →
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="task-body">
                 <div className="task-detail">{task.detail}</div>
-                <div className="prompt-box">{task.prompt}</div>
+
+                {/* Language selector for reading task */}
+                {isReadingTask && (
+                  <>
+                    <div className="lang-badge" onClick={() => setShowLangPicker(true)}>
+                      {sentence.flag} {sentence.label} · Change language ↓
+                    </div>
+                    <div className="prompt-box">{sentence.text}</div>
+                  </>
+                )}
+
+                {/* Prompt for pitch task */}
+                {!isReadingTask && (
+                  <div className="prompt-box">&quot;Ahhh...&quot;</div>
+                )}
 
                 <div className="waveform">
                   {bars.map((h, i) => (
