@@ -5,7 +5,9 @@ import { Auth0Provider } from "@auth0/auth0-react";
 import App from "./App";
 import "./index.css";
 
-const domain = import.meta.env.VITE_AUTH0_DOMAIN;
+// Strip any protocol prefix — Auth0Provider expects a bare domain (e.g. "alexou.ca.auth0.com")
+const rawDomain = import.meta.env.VITE_AUTH0_DOMAIN || "";
+const domain = rawDomain.replace(/^https?:\/\//, "");
 const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID;
 const audience = import.meta.env.VITE_AUTH0_AUDIENCE;
 
