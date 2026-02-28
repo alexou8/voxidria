@@ -175,3 +175,72 @@
 .main-content {
   flex: 1;
 }
+
+/* Consent card */
+.consent-card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.consent-body ul {
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.disclaimer-box {
+  background: rgba(244, 67, 54, 0.07);
+  border-left: 3px solid var(--danger);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+}
+
+/* Reading passage blockquote */
+.reading-passage {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--primary);
+  background: var(--bg-card-hover, rgba(255,255,255,0.03));
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-style: italic;
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+/* Task card icon */
+.task-card-icon {
+  font-size: 1.25rem;
+}
+
+/* Uploading screen */
+.uploading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+/* Results action buttons */
+.results-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
