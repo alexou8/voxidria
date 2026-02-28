@@ -1,7 +1,7 @@
 from src.services.audioParser import extract_features
 
 # Path to a WAV audio file for testing
-audio_file = "data/example.wav"  # replace with your own file
+audio_file = "data/example3.wav"  # replace with your own file
 
 features = extract_features(audio_file)
 
