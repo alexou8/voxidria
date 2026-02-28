@@ -3,4 +3,4 @@ scikit-learn
 tensorflow
 joblib
 librosa
-parselmouth
+praat-parselmouth
