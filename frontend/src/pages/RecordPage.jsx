@@ -96,7 +96,7 @@ export default function RecordPage() {
   const hasCurrentRecording = !!currentRecording;
 
   const parsedAge = normalizeAge(ageInput);
-  const isAgeValid = parsedAge != null && parsedAge >= 18;
+  const isAgeValid = parsedAge != null;
 
   // Show language picker when arriving at reading task recording phase
   useEffect(() => {
@@ -276,7 +276,6 @@ export default function RecordPage() {
       const data = await createSession("1.0", deviceMeta, getAccessTokenSilently);
       setSessionId(data.session_id);
       setAge(parsedAge);
-      ensurePseudoResult(data.session_id, parsedAge);
       resetGuideAudio();
       setPhase("recording");
     } catch (err) {
@@ -591,7 +590,10 @@ export default function RecordPage() {
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                      fileInputRef.current?.click();
+                      setDropped(true);
+                    }}
                   >
                     <span>Upload audio file or <u>browse</u></span>
                     <span className="rp-dropzone-sub">.wav · .mp3 · .m4a · .aac · .ogg · max 25 MB</span>

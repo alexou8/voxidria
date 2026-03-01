@@ -148,7 +148,7 @@ export function ensurePseudoResult(sessionId, ageInput, dropbox) {
 
   const band = scoreBandForAge(age);
   console.log(dropbox);
-  const dropChance = dropbox && (age > 60) ? 1.5 : 0.5;
+  const dropChance = dropbox && (age > 60) ? 5 : 0.5;
   console.log("Multiplier: " + dropChance);
   console.log("Min: " + band.minScore * dropChance + " Max: " + band.maxScore * dropChance);
   const score = randomInt(
