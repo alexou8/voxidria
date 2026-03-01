@@ -13,6 +13,8 @@ feature_names = joblib.load(FEATURES_PATH)
 
 def predict_from_dict(features: dict) -> dict:
     # ensure correct order + all features present
+    print("\n" * 3)
+    print(len(feature_names))
     x = np.array([[float(features[f]) for f in feature_names]], dtype=np.float32)
     x_sc = scaler.transform(x)
 
