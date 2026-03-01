@@ -11,6 +11,7 @@ const AGE_SCORE_BANDS = [
 ];
 
 function clamp(value, min, max) {
+  console.log("Clamp: " + Math.min(Math.max(value, min), max));
   return Math.min(Math.max(value, min), max);
 }
 
@@ -148,6 +149,8 @@ export function ensurePseudoResult(sessionId, ageInput, dropbox) {
   const band = scoreBandForAge(age);
   console.log(dropbox);
   const dropChance = dropbox && (age > 60) ? 1.5 : 0.5;
+  console.log("Multiplier: " + dropChance);
+  console.log("Min: " + band.minScore * dropChance + " Max: " + band.maxScore * dropChance);
   const score = randomInt(
     Math.min(band.minScore * dropChance, 80), 
     Math.min(band.maxScore * dropChance, 100)

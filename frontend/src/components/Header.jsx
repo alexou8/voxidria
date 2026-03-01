@@ -8,7 +8,7 @@ export default function Header() {
   return (
     <header className="header">
       <Link to="/" className="header-brand">
-        <img src="/voxidria.svg" alt="" className="header-logo" />
+        <img src="/logo.png" alt="" className="header-logo" />
         <span>Voxidria</span>
       </Link>
 

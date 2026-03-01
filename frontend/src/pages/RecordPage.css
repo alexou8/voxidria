@@ -445,6 +445,45 @@ main.rp-main { max-width: 660px; margin: 0 auto; padding: 3rem 2rem; }
 }
 .rp-file-badge-remove:hover { color: var(--rp-danger); }
 
+/* Recording preview */
+.rp-preview-card {
+  margin-top: 0.75rem;
+  margin-bottom: 1.35rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(33, 230, 193, 0.28);
+  background: linear-gradient(135deg, rgba(26, 46, 68, 0.05), rgba(33, 230, 193, 0.1));
+  box-shadow: 0 3px 10px rgba(26, 46, 68, 0.06);
+}
+.rp-preview-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.rp-preview-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--rp-navy);
+}
+.rp-preview-sub {
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.74rem;
+  color: var(--rp-muted);
+}
+.rp-preview-audio {
+  width: 100%;
+  display: block;
+  border-radius: 8px;
+}
+.rp-preview-audio::-webkit-media-controls-panel {
+  background-color: rgba(249, 250, 251, 0.96);
+}
+.rp-preview-audio::-webkit-media-controls-current-time-display,
+.rp-preview-audio::-webkit-media-controls-time-remaining-display {
+  color: var(--rp-navy);
+}
+
 .rp-age-field {
   display: flex;
   flex-direction: column;

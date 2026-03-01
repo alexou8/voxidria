@@ -68,6 +68,7 @@ export default function RecordPage() {
   const [dropped, setDropped] = useState(false);
   const [fileError, setFileError] = useState(null);
   const [readingDuration, setReadingDuration] = useState(null);
+  const [recordingPreviewUrl, setRecordingPreviewUrl] = useState("");
 
   const fileInputRef = useRef(null);
   const [taskSwitchWarning, setTaskSwitchWarning] = useState("");
@@ -91,7 +92,8 @@ export default function RecordPage() {
   const task = TASKS[currentTask];
   const isReadingTask = task?.id === "reading";
   const sentence = READING_SENTENCES[language];
-  const hasCurrentRecording = !!recordings[task?.id];
+  const currentRecording = task?.id ? recordings[task.id] : null;
+  const hasCurrentRecording = !!currentRecording;
 
   const parsedAge = normalizeAge(ageInput);
   const isAgeValid = parsedAge != null && parsedAge >= 18;
@@ -144,6 +146,21 @@ export default function RecordPage() {
       if (taskSwitchTimerRef.current) clearTimeout(taskSwitchTimerRef.current);
     };
   }, [guideAudioUrl]);
+
+  // Keep a playable preview URL for the current task's recording (mic or uploaded file).
+  useEffect(() => {
+    if (!currentRecording) {
+      setRecordingPreviewUrl("");
+      return;
+    }
+
+    const url = URL.createObjectURL(currentRecording);
+    setRecordingPreviewUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [currentRecording]);
 
   // Play guide audio when URL changes
   useEffect(() => {
@@ -661,11 +678,18 @@ export default function RecordPage() {
               )
               )}
 
-              {/* Reading duration warning */}
-              {isReadingTask && readingDuration !== null && readingDuration < 13 && (
-                <p className="rp-error" style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
-                  Minimum 13 seconds required. Detected: {readingDuration}s
-                </p>
+              {/* Recording preview */}
+              {hasCurrentRecording && !isRecording && recordingPreviewUrl && (
+                <div className="rp-preview-card">
+                  <div className="rp-preview-title-row">
+                    <div className="rp-dot-green" />
+                    <div className="rp-preview-title">Preview recording before continuing</div>
+                  </div>
+                  <div className="rp-preview-sub">
+                    {recordings[task.id]?.name ? "Uploaded file preview" : "Microphone recording preview"}
+                  </div>
+                  <audio controls src={recordingPreviewUrl} className="rp-preview-audio" preload="metadata" />
+                </div>
               )}
 
               {/* Record button */}
