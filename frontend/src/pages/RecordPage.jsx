@@ -661,33 +661,6 @@ export default function RecordPage() {
               )
               )}
 
-              {/* Drop zone */}
-              {!isRecording && (
-                <>
-                  <div
-                    className={`rp-dropzone${isDragging ? " dragover" : ""}`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={() => {
-                      fileInputRef.current?.click();
-                      setDropped(true);
-                    }}
-                  >
-                    <span>Drop audio file or <u>browse</u></span>
-                    <span className="rp-dropzone-sub">.wav · .mp3 · .m4a · .aac · .ogg · max 25 MB</span>
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".wav,.mp3,.m4a,.aac,.ogg,audio/*"
-                    style={{ display: "none" }}
-                    onChange={handleFileInput}
-                  />
-                  {fileError && <p className="rp-error" style={{ marginTop: "0.4rem", fontSize: "0.8rem" }}>{fileError}</p>}
-                </>
-              )}
-
               {/* Reading duration warning */}
               {isReadingTask && readingDuration !== null && readingDuration < 13 && (
                 <p className="rp-error" style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
