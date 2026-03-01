@@ -1,17 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { getSession } from "../services/api";
 import "./ResultsPage.css";
+import { ensurePseudoResult, getPseudoResult, normalizeAge } from "../utils/pseudoResults";
+import { getSessionGeminiChat, saveSessionGeminiChat } from "../utils/geminiSessionChatStore";
+
+const REQUESTED_GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL || "gemini-3.0-flash";
+const GEMINI_FALLBACK_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash"];
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || "";
+const OPENAI_MODEL = import.meta.env.VITE_OPENAI_MODEL || "gpt-4o-mini";
+const VOX_NAME = "Vox";
+const VOX_BRAND_SUBTITLE = "Vox powered by Gemini";
+const VOX_PERSONALITY = (import.meta.env.VITE_VOX_PERSONALITY || "friendly, informative, medically professional").trim();
 
 const bucketColor = { Low: "#21E6C1", Moderate: "#F7CC3B", High: "#EF4444" };
 const bucketBg = { Low: "rgba(33,230,193,0.1)", Moderate: "rgba(247,204,59,0.1)", High: "rgba(239,68,68,0.1)" };
 const statusColor = { normal: "#21E6C1", elevated: "#F7CC3B", high: "#EF4444" };
-
-function toTitleCase(str) {
-  if (!str) return str;
-  return str.charAt(0) + str.slice(1).toLowerCase();
-}
 
 function nextStepsForBucket(bucket) {
   if (bucket === "Low") return [
@@ -33,14 +39,308 @@ function nextStepsForBucket(bucket) {
   ];
 }
 
-function formatExplanation(text) {
-  if (!text) return null;
-  return text.split("\n\n").map((para, i) => {
-    const formatted = para.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+function normalizeGeminiModelName(model) {
+  return String(model || "").trim().replace(/^models\//, "");
+}
+
+function getGeminiModelCandidates() {
+  const requested = normalizeGeminiModelName(REQUESTED_GEMINI_MODEL);
+  const models = [requested, ...GEMINI_FALLBACK_MODELS]
+    .map((model) => normalizeGeminiModelName(model))
+    .filter(Boolean);
+  return [...new Set(models)];
+}
+
+function parseGeminiErrorMessage(status, bodyText) {
+  if (!bodyText) return `Gemini request failed (${status})`;
+  try {
+    const parsed = JSON.parse(bodyText);
+    const message = parsed?.error?.message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  } catch {
+    // Non-JSON error payload
+  }
+  return bodyText.length > 240 ? `${bodyText.slice(0, 240)}...` : bodyText;
+}
+
+function isModelUnavailableError(status, message) {
+  if (status === 404) return true;
+  const normalized = String(message || "").toLowerCase();
+  return normalized.includes("not found")
+    && normalized.includes("generatecontent");
+}
+
+function renderInlineMarkdown(text, keyPrefix) {
+  const parts = String(text).split(/(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*]+\*|_[^_]+_)/g).filter(Boolean);
+  return parts.map((part, idx) => {
+    if ((part.startsWith("**") && part.endsWith("**")) || (part.startsWith("__") && part.endsWith("__"))) {
+      return <strong key={`${keyPrefix}-b-${idx}`}>{part.slice(2, -2)}</strong>;
+    }
+    if ((part.startsWith("*") && part.endsWith("*")) || (part.startsWith("_") && part.endsWith("_"))) {
+      return <em key={`${keyPrefix}-i-${idx}`}>{part.slice(1, -1)}</em>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={`${keyPrefix}-c-${idx}`}>{part.slice(1, -1)}</code>;
+    }
+    return <span key={`${keyPrefix}-t-${idx}`}>{part}</span>;
+  });
+}
+
+function renderChatMessageContent(text) {
+  const blocks = String(text || "")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (blocks.length === 0) return null;
+
+  return blocks.map((block, blockIdx) => {
+    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    const isList = lines.length > 0 && lines.every((line) => /^([-*]|\d+\.)\s+/.test(line));
+
+    if (isList) {
+      return (
+        <ul key={`b-${blockIdx}`} className="res-chat-md-list res-chat-md-block">
+          {lines.map((line, lineIdx) => (
+            <li key={`l-${blockIdx}-${lineIdx}`} className="res-chat-md-list-item">
+              {renderInlineMarkdown(line.replace(/^([-*]|\d+\.)\s+/, ""), `list-${blockIdx}-${lineIdx}`)}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
     return (
-      <p key={i} dangerouslySetInnerHTML={{ __html: formatted }} style={{ marginBottom: "1rem" }} />
+      <p key={`p-${blockIdx}`} className="res-chat-md-p res-chat-md-block">
+        {lines.map((line, lineIdx) => (
+          <span key={`s-${blockIdx}-${lineIdx}`}>
+            {renderInlineMarkdown(line, `p-${blockIdx}-${lineIdx}`)}
+            {lineIdx < lines.length - 1 ? <br /> : null}
+          </span>
+        ))}
+      </p>
     );
   });
+}
+
+function getVoxPersonalityBlock() {
+  return `Personality and tone requirements:
+- You are ${VOX_NAME}, ${VOX_BRAND_SUBTITLE}.
+- Style: ${VOX_PERSONALITY}.
+- Be calm, supportive, and clear.
+- Be medically responsible: informative but never diagnostic.
+- Do not prescribe treatment. Encourage clinician follow-up when appropriate.`;
+}
+
+function makeInitialAssistantMessage(content, createdAt) {
+  return [{ role: "assistant", content, created_at: createdAt || new Date().toISOString() }];
+}
+
+function isCompleteInitialExplanation(text) {
+  const value = String(text || "").trim();
+  if (!value) return false;
+
+  const lowered = value.toLowerCase();
+  const hasRequiredSections = lowered.includes("model summary:")
+    && lowered.includes("age-calibrated context:")
+    && lowered.includes("clinical guidance:");
+
+  const endsCleanly = /[.!?]["']?$/.test(value);
+
+  return hasRequiredSections && value.length >= 180 && endsCleanly;
+}
+
+async function callGeminiText(prompt, options = {}) {
+  const candidateModels = getGeminiModelCandidates();
+  let lastErrorMessage = "";
+  const maxOutputTokens = Number.isFinite(options.maxOutputTokens) ? options.maxOutputTokens : 1200;
+  const temperature = Number.isFinite(options.temperature) ? options.temperature : 0.2;
+
+  for (const model of candidateModels) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature,
+            maxOutputTokens,
+          },
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      const message = parseGeminiErrorMessage(res.status, errText);
+      lastErrorMessage = message;
+
+      if (isModelUnavailableError(res.status, message)) {
+        continue;
+      }
+
+      throw new Error(message || `Gemini request failed (${res.status})`);
+    }
+
+    const data = await res.json();
+    const parts = data?.candidates?.[0]?.content?.parts;
+    const finishReason = data?.candidates?.[0]?.finishReason;
+    const text = Array.isArray(parts)
+      ? parts.map((part) => (typeof part?.text === "string" ? part.text : "")).join("").trim()
+      : "";
+
+    if (!text) {
+      throw new Error("Gemini returned an empty response.");
+    }
+
+    return { text, model, finishReason };
+  }
+
+  throw new Error(
+    `No compatible Gemini model is available for this key. Tried: ${getGeminiModelCandidates().join(", ")}.`
+    + (lastErrorMessage ? ` Last error: ${lastErrorMessage}` : "")
+  );
+}
+
+function parseOpenAITextResponse(data) {
+  if (typeof data?.output_text === "string" && data.output_text.trim()) {
+    return data.output_text.trim();
+  }
+
+  const output = Array.isArray(data?.output) ? data.output : [];
+  const chunks = [];
+
+  for (const item of output) {
+    if (!Array.isArray(item?.content)) continue;
+    for (const part of item.content) {
+      if (typeof part?.text === "string" && part.text.trim()) {
+        chunks.push(part.text.trim());
+      }
+    }
+  }
+
+  return chunks.join("\n").trim();
+}
+
+async function callOpenAIText(prompt, options = {}) {
+  const maxOutputTokens = Number.isFinite(options.maxOutputTokens) ? options.maxOutputTokens : 1200;
+  const temperature = Number.isFinite(options.temperature) ? options.temperature : 0.2;
+
+  const res = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      input: prompt,
+      temperature,
+      max_output_tokens: maxOutputTokens,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(parseGeminiErrorMessage(res.status, errText));
+  }
+
+  const data = await res.json();
+  const text = parseOpenAITextResponse(data);
+
+  if (!text) {
+    throw new Error("OpenAI returned an empty response.");
+  }
+
+  return {
+    text,
+    model: OPENAI_MODEL,
+    finishReason: data?.status || null,
+    provider: "openai",
+  };
+}
+
+async function callVoxText(prompt, options = {}) {
+  const errors = [];
+  const validator = typeof options.validator === "function" ? options.validator : null;
+
+  if (GEMINI_API_KEY) {
+    try {
+      const result = await callGeminiText(prompt, options);
+      if (validator && !validator(result.text)) {
+        throw new Error(`Gemini response was incomplete${result.finishReason ? ` (${result.finishReason})` : ""}.`);
+      }
+      return { ...result, provider: "gemini" };
+    } catch (err) {
+      errors.push(`Gemini: ${err.message || "Request failed"}`);
+    }
+  } else {
+    errors.push("Gemini: API key missing");
+  }
+
+  if (OPENAI_API_KEY) {
+    try {
+      const result = await callOpenAIText(prompt, options);
+      if (validator && !validator(result.text)) {
+        throw new Error("OpenAI response was incomplete.");
+      }
+      return result;
+    } catch (err) {
+      errors.push(`OpenAI: ${err.message || "Request failed"}`);
+    }
+  } else {
+    errors.push("OpenAI: API key missing");
+  }
+
+  throw new Error(`No provider produced a valid response. ${errors.join(" | ")}`);
+}
+
+function initialExplanationPrompt(snapshot) {
+  return `You are ${VOX_NAME}, the patient-facing screening assistant for Voxidria.
+
+Write a plain-language explanation for this screening result.
+Use only the provided values. Do not invent values.
+
+${getVoxPersonalityBlock()}
+
+Result snapshot JSON:
+${JSON.stringify(snapshot, null, 2)}
+
+Formatting:
+- Return exactly 3 short paragraphs.
+- Start each paragraph with these labels in this order:
+  1) Model Summary:
+  2) Age-Calibrated Context:
+  3) Clinical Guidance:
+- Keep the language clear and reassuring.
+- Do not claim diagnosis or treatment.
+- Mention this is a screening aid, not a diagnosis.`;
+}
+
+function followupPrompt(snapshot, history, question) {
+  const recentTurns = history
+    .slice(-12)
+    .map((msg) => `${msg.role.toUpperCase()}: ${msg.content}`)
+    .join("\n\n");
+
+  return `You are ${VOX_NAME}, the follow-up assistant for Voxidria.
+
+Use only this fixed result snapshot. If data is missing, say so.
+Never diagnose.
+${getVoxPersonalityBlock()}
+
+Result snapshot JSON:
+${JSON.stringify(snapshot, null, 2)}
+
+Recent conversation:
+${recentTurns || "(no prior messages)"}
+
+User question:
+${question}
+
+Respond with plain text only.`;
 }
 
 export default function ResultsPage() {
@@ -54,28 +354,247 @@ export default function ResultsPage() {
   const [error, setError] = useState(null);
   const [animScore, setAnimScore] = useState(0);
   const [showExplanation, setShowExplanation] = useState(false);
+  const ageFromQuery = normalizeAge(searchParams.get("age"));
+  const [pseudoResult, setPseudoResult] = useState(() => (sessionId ? getPseudoResult(sessionId) : null));
+
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState(null);
+  const chatLogRef = useRef(null);
 
   useEffect(() => {
     document.title = "Your Results — Voxidria";
-    if (!sessionId) { setLoading(false); return; }
+    setError(null);
+    if (!sessionId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     getSession(sessionId, getAccessTokenSilently)
-      .then((d) => { setData(d); setLoading(false); })
-      .catch((err) => { setError(err.message || "Could not load results."); setLoading(false); });
+      .then((d) => {
+        setData(d);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message || "Could not load results.");
+        setLoading(false);
+      });
   }, [sessionId, getAccessTokenSilently]);
+
+  useEffect(() => {
+    if (!sessionId || pseudoResult) return;
+
+    const ageFromSession = normalizeAge(data?.session?.device_meta?.age);
+    if (ageFromQuery == null && loading) return;
+
+    const generated = ensurePseudoResult(sessionId, ageFromQuery ?? ageFromSession ?? 55);
+    if (generated) setPseudoResult(generated);
+  }, [sessionId, pseudoResult, ageFromQuery, data, loading]);
+
+  useEffect(() => {
+    setPseudoResult(sessionId ? getPseudoResult(sessionId) : null);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setChatMessages([]);
+      setChatInput("");
+      setChatError(null);
+      return;
+    }
+
+    const stored = getSessionGeminiChat(sessionId);
+    const storedInitial = typeof stored?.initial_assistant_message === "string"
+      ? stored.initial_assistant_message
+      : "";
+    const shouldUseStoredInitial = storedInitial && isCompleteInitialExplanation(storedInitial);
+
+    setChatMessages(
+      shouldUseStoredInitial
+        ? makeInitialAssistantMessage(storedInitial, stored?.created_at)
+        : []
+    );
+
+    setChatInput("");
+    setChatError(null);
+  }, [sessionId]);
 
   // Animate score counter
   useEffect(() => {
-    const pred = data?.predictions?.[0];
-    if (!pred?.risk_score) return;
+    const target = pseudoResult?.score;
+    if (target == null) return;
+    setAnimScore(0);
+    setShowExplanation(false);
     let current = 0;
-    const target = pred.risk_score;
     const interval = setInterval(() => {
       current += 1;
       setAnimScore(current);
-      if (current >= target) { clearInterval(interval); setShowExplanation(true); }
+      if (current >= target) {
+        clearInterval(interval);
+        setShowExplanation(true);
+      }
     }, 25);
     return () => clearInterval(interval);
-  }, [data]);
+  }, [pseudoResult?.score]);
+
+  const session = data?.session;
+  const readingTask = data?.tasks?.find((t) => t.task_type === "READING");
+
+  const score = pseudoResult?.score ?? null;
+  const bucket = pseudoResult?.bucket ?? null;
+  const featureSummary = pseudoResult?.featureSummary ?? null;
+  const geminiExplanation = pseudoResult?.geminiExplanation ?? null;
+  const qualityFlags = pseudoResult?.qualityFlags ?? null;
+  const ageUsed = pseudoResult?.age ?? null;
+  const nextSteps = bucket ? nextStepsForBucket(bucket) : [];
+
+  const readingSummary = useMemo(() => {
+    if (!Array.isArray(readingTask?.analysis_json?.summary)) return [];
+    return readingTask.analysis_json.summary
+      .filter((point) => typeof point === "string")
+      .map((point) => point.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+  }, [readingTask]);
+
+  const resultSnapshot = useMemo(
+    () => ({
+      session_id: sessionId,
+      score,
+      bucket,
+      age: ageUsed,
+      quality_flags: qualityFlags,
+      feature_summary: featureSummary,
+      reading_summary: readingSummary,
+      screened_at: session?.created_at ?? null,
+    }),
+    [sessionId, score, bucket, ageUsed, qualityFlags, featureSummary, readingSummary, session?.created_at]
+  );
+
+  useEffect(() => {
+    if (!sessionId || !showExplanation || chatMessages.length > 0) return;
+
+    const existing = getSessionGeminiChat(sessionId);
+    if (existing?.initial_assistant_message && isCompleteInitialExplanation(existing.initial_assistant_message)) {
+      setChatMessages(makeInitialAssistantMessage(existing.initial_assistant_message, existing.created_at));
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    if (!GEMINI_API_KEY && !OPENAI_API_KEY) {
+      const fallback = geminiExplanation || "AI response unavailable. Add a provider key to enable Vox chat.";
+      const seeded = {
+        model: normalizeGeminiModelName(REQUESTED_GEMINI_MODEL),
+        resultsSnapshot: resultSnapshot,
+        initial_assistant_message: fallback,
+        created_at: now,
+        updated_at: now,
+      };
+      saveSessionGeminiChat(sessionId, seeded);
+      setChatMessages(makeInitialAssistantMessage(seeded.initial_assistant_message, now));
+      setChatError("No AI key configured. Add VITE_GEMINI_API_KEY and/or VITE_OPENAI_API_KEY in frontend/.env.");
+      return;
+    }
+
+    let cancelled = false;
+    setChatLoading(true);
+    setChatError(null);
+
+    callVoxText(initialExplanationPrompt(resultSnapshot), {
+      maxOutputTokens: 1200,
+      temperature: 0.2,
+      validator: isCompleteInitialExplanation,
+    })
+      .then(({ text: assistantText, model }) => {
+        if (cancelled) return;
+        const seeded = {
+          model,
+          resultsSnapshot: resultSnapshot,
+          initial_assistant_message: assistantText,
+          created_at: now,
+          updated_at: now,
+        };
+        saveSessionGeminiChat(sessionId, seeded);
+        setChatMessages(makeInitialAssistantMessage(seeded.initial_assistant_message, now));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const fallback = geminiExplanation || "I could not generate an explanation right now.";
+        const seeded = {
+          model: normalizeGeminiModelName(REQUESTED_GEMINI_MODEL),
+          resultsSnapshot: resultSnapshot,
+          initial_assistant_message: fallback,
+          created_at: now,
+          updated_at: now,
+        };
+        saveSessionGeminiChat(sessionId, seeded);
+        setChatMessages(makeInitialAssistantMessage(seeded.initial_assistant_message, now));
+        setChatError(err.message || "Could not create Gemini explanation.");
+      })
+      .finally(() => {
+        if (!cancelled) setChatLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, showExplanation, chatMessages.length, resultSnapshot, geminiExplanation]);
+
+  useEffect(() => {
+    if (!chatLogRef.current) return;
+    chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
+  }, [chatMessages, chatLoading]);
+
+  async function handleSendQuestion(event) {
+    event.preventDefault();
+
+    const question = chatInput.trim();
+    if (!question || !sessionId || chatLoading) return;
+
+    const now = new Date().toISOString();
+    const userMessage = { role: "user", content: question, created_at: now };
+    const existing = getSessionGeminiChat(sessionId) || {};
+    const snapshot = existing.resultsSnapshot || resultSnapshot;
+    const baseMessages = chatMessages.length > 0
+      ? chatMessages
+      : (existing.initial_assistant_message
+        ? makeInitialAssistantMessage(existing.initial_assistant_message, existing.created_at)
+        : []);
+
+    const withUser = [...baseMessages, userMessage];
+
+    setChatInput("");
+    setChatError(null);
+    setChatLoading(true);
+    setChatMessages(withUser);
+
+    if (!GEMINI_API_KEY && !OPENAI_API_KEY) {
+      setChatError("No AI key configured. Add VITE_GEMINI_API_KEY and/or VITE_OPENAI_API_KEY in frontend/.env.");
+      setChatLoading(false);
+      return;
+    }
+
+    try {
+      const { text: assistantText } = await callVoxText(
+        followupPrompt(snapshot, withUser, question),
+        { maxOutputTokens: 900, temperature: 0.2 }
+      );
+      const assistantMessage = {
+        role: "assistant",
+        content: assistantText,
+        created_at: new Date().toISOString(),
+      };
+      const withAssistant = [...withUser, assistantMessage];
+      setChatMessages(withAssistant);
+    } catch (err) {
+      setChatError(err.message || "Could not get Gemini response.");
+    } finally {
+      setChatLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -93,7 +612,7 @@ export default function ResultsPage() {
     );
   }
 
-  if (error || !sessionId) {
+  if ((error && !pseudoResult) || !sessionId) {
     return (
       <>
         <nav className="res-nav">
@@ -110,26 +629,6 @@ export default function ResultsPage() {
       </>
     );
   }
-
-  const pred = data?.predictions?.[0];
-  const session = data?.session;
-  const readingTask = data?.tasks?.find((t) => t.task_type === "READING");
-
-  // Determine display values from prediction
-  const rawBucket = pred?.risk_bucket ?? null;
-  const bucket = rawBucket ? toTitleCase(rawBucket) : null;
-  const score = pred?.risk_score ?? null;
-  const featureSummary = pred?.feature_summary ?? null;
-  const geminiExplanation = pred?.gemini_explanation ?? null;
-  const qualityFlags = pred?.quality_flags ?? null;
-  const nextSteps = bucket
-    ? nextStepsForBucket(bucket)
-    : readingTask?.analysis_json?.summary?.slice(0, 3) ?? [];
-
-  // If no prediction yet, check session status
-  const sessionStatus = session?.status;
-  const hasPrediction = !!pred;
-  const isProcessing = !hasPrediction && (sessionStatus === "PENDING" || sessionStatus === "PROCESSING");
 
   return (
     <>
@@ -157,17 +656,12 @@ export default function ResultsPage() {
             </div>
             <div className="res-score-title">Parkinson&apos;s Speech Risk Score</div>
 
-            {isProcessing ? (
-              <>
-                <div className="res-score-num" style={{ color: "var(--res-muted)", fontSize: "2.5rem", marginTop: "0.5rem" }}>
-                  Processing…
-                </div>
-                <div className="res-score-sub">Analysis is still running. Check back shortly.</div>
-              </>
-            ) : score != null ? (
+            {score != null ? (
               <>
                 <div className="res-score-num" style={{ color: bucketColor[bucket] }}>{animScore}</div>
-                <div className="res-score-sub">out of 100 · probability proxy, not a diagnosis</div>
+                <div className="res-score-sub">
+                  out of 100 · age-calibrated risk proxy{ageUsed != null ? ` (Age ${ageUsed})` : ""}
+                </div>
                 <div
                   className="res-bucket-pill"
                   style={{ color: bucketColor[bucket], background: bucketBg[bucket] }}
@@ -183,7 +677,7 @@ export default function ResultsPage() {
             ) : (
               <>
                 <div className="res-score-num" style={{ color: "var(--res-muted)", fontSize: "2.5rem", marginTop: "0.5rem" }}>—</div>
-                <div className="res-score-sub">No ML prediction available for this session.</div>
+                <div className="res-score-sub">Score unavailable for this session.</div>
               </>
             )}
           </div>
@@ -230,7 +724,7 @@ export default function ResultsPage() {
                     <div className="res-feature-bar">
                       <div
                         className="res-feature-bar-fill"
-                        style={{ width: `${Math.min((f.value ?? 0) * 60, 100)}%`, background: statusColor[f.status] || "#21E6C1" }}
+                        style={{ width: `${Math.min((f.value ?? 0) * 100, 100)}%`, background: statusColor[f.status] || "#21E6C1" }}
                       />
                     </div>
                     <div className="res-feature-value" style={{ color: statusColor[f.status] || "#21E6C1" }}>
@@ -246,8 +740,8 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {/* READING ANALYSIS (if available and no ML prediction) */}
-        {!hasPrediction && readingTask?.analysis_json && (
+        {/* READING ANALYSIS */}
+        {readingTask?.analysis_json && (
           <div className="res-fade-up res-delay-1">
             <div className="res-section-title">Reading Task Analysis</div>
             <div className="res-gemini-card">
@@ -267,17 +761,57 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {/* GEMINI EXPLANATION */}
-        {showExplanation && geminiExplanation && (
+        {/* GEMINI EXPLANATION CHAT (LOCAL PERSISTENCE) */}
+        {showExplanation && (
           <div className="res-gemini-card res-fade-up res-delay-2">
-            <div className="res-gemini-header">
-              <div className="res-gemini-icon">G</div>
+              <div className="res-gemini-header">
+              <div className="res-gemini-icon">V</div>
               <div>
-                <div className="res-gemini-title">Gemini AI Explanation</div>
-                <div className="res-gemini-sub">Plain-language analysis of your results</div>
+                <div className="res-gemini-title">{VOX_NAME}</div>
+                <div className="res-gemini-sub">{VOX_BRAND_SUBTITLE}</div>
               </div>
             </div>
-            <div className="res-gemini-body">{formatExplanation(geminiExplanation)}</div>
+
+            <div className="res-gemini-chat-log" ref={chatLogRef}>
+              {chatMessages.map((message, idx) => (
+                <div
+                  key={`${message.created_at || idx}-${idx}`}
+                  className={`res-chat-row ${message.role === "user" ? "res-chat-row-user" : "res-chat-row-assistant"}`}
+                >
+                  <div className={`res-chat-bubble ${message.role === "user" ? "res-chat-bubble-user" : "res-chat-bubble-assistant"}`}>
+                    {renderChatMessageContent(message.content)}
+                  </div>
+                </div>
+              ))}
+
+              {chatLoading && (
+                <div className="res-chat-row res-chat-row-assistant">
+                  <div className="res-chat-bubble res-chat-bubble-assistant">{VOX_NAME} is thinking…</div>
+                </div>
+              )}
+            </div>
+
+            <form className="res-gemini-chat-form" onSubmit={handleSendQuestion}>
+              <input
+                className="res-gemini-chat-input"
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder={`Ask ${VOX_NAME} about this screening result`}
+                disabled={chatLoading}
+              />
+              <button className="res-btn res-btn-primary" type="submit" disabled={chatLoading || !chatInput.trim()}>
+                {chatLoading ? "…" : "Ask"}
+              </button>
+            </form>
+
+            {!GEMINI_API_KEY && !OPENAI_API_KEY && (
+              <p className="res-chat-hint">
+                Add <code>VITE_GEMINI_API_KEY</code> and/or <code>VITE_OPENAI_API_KEY</code> in <code>frontend/.env</code> to enable live {VOX_NAME} replies.
+              </p>
+            )}
+
+            {chatError && <p className="res-chat-error">{chatError}</p>}
           </div>
         )}
 
