@@ -99,10 +99,10 @@ export async function uploadAudioToStorage(signedUrl, audioBlob) {
 }
 
 /**
- * Finalize a task: submit transcript and trigger Gemini reading analysis.
- * Returns { task_status, analysis_json }
+ * Finalize a task: trigger the inference microservice for analysis.
+ * Returns { task_status, duration_ms, ... }
  */
-export async function finalizeTask(sessionId, taskType, transcriptText, getToken) {
+export async function finalizeTask(sessionId, taskType, languageCode, getToken) {
   return callFunction(
     "/finalize-task",
     {
@@ -110,7 +110,7 @@ export async function finalizeTask(sessionId, taskType, transcriptText, getToken
       body: JSON.stringify({
         session_id: sessionId,
         task_type: taskType,
-        transcript_text: transcriptText || "",
+        language_code: languageCode || "en",
       }),
     },
     getToken

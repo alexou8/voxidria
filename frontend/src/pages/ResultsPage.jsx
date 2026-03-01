@@ -58,17 +58,43 @@ export default function ResultsPage() {
   useEffect(() => {
     document.title = "Your Results — Voxidria";
     if (!sessionId) { setLoading(false); return; }
-    getSession(sessionId, getAccessTokenSilently)
-      .then((d) => { setData(d); setLoading(false); })
-      .catch((err) => { setError(err.message || "Could not load results."); setLoading(false); });
+
+    const TERMINAL = ["ANALYZED", "FAILED", "REJECTED_SHORT_AUDIO"];
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const d = await getSession(sessionId, getAccessTokenSilently);
+        if (cancelled) return;
+        setData(d);
+        setLoading(false);
+
+        const tasks = (d.tasks ?? []).filter((t) =>
+          ["SUSTAINED_VOWEL", "READING"].includes(t.task_type)
+        );
+        const allTerminal = tasks.length > 0 && tasks.every((t) => TERMINAL.includes(t.task_status));
+        const hasExplanation = !!d.session?.gemini_explanation;
+        const sessionDone = ["DONE", "FAILED"].includes(d.session?.status);
+
+        if (allTerminal && (hasExplanation || sessionDone)) return;
+        if (!cancelled) setTimeout(poll, 1500);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err.message || "Could not load results.");
+        setLoading(false);
+      }
+    };
+
+    poll();
+    return () => { cancelled = true; };
   }, [sessionId, getAccessTokenSilently]);
 
   // Animate score counter
   useEffect(() => {
-    const pred = data?.predictions?.[0];
-    if (!pred?.risk_score) return;
+    const score = data?.session?.risk_score;
+    if (score == null) return;
     let current = 0;
-    const target = pred.risk_score;
+    const target = score;
     const interval = setInterval(() => {
       current += 1;
       setAnimScore(current);
@@ -111,25 +137,35 @@ export default function ResultsPage() {
     );
   }
 
-  const pred = data?.predictions?.[0];
+  // Risk data lives on session directly; tasks come from task_map
   const session = data?.session;
-  const readingTask = data?.tasks?.find((t) => t.task_type === "READING");
+  const vowelTask = data?.task_map?.["SUSTAINED_VOWEL"] ?? data?.tasks?.find((t) => t.task_type === "SUSTAINED_VOWEL");
+  const readingTask = data?.task_map?.["READING"] ?? data?.tasks?.find((t) => t.task_type === "READING");
 
-  // Determine display values from prediction
-  const rawBucket = pred?.risk_bucket ?? null;
+  const TERMINAL = ["ANALYZED", "FAILED", "REJECTED_SHORT_AUDIO"];
+  const isStillProcessing =
+    !data ||
+    !(data.tasks ?? [])
+      .filter((t) => ["SUSTAINED_VOWEL", "READING"].includes(t.task_type))
+      .every((t) => TERMINAL.includes(t.task_status));
+
+  // Risk score + bucket are columns on test_sessions
+  const hasPrediction = session?.risk_score != null;
+  const rawBucket = session?.risk_bucket ?? null;
   const bucket = rawBucket ? toTitleCase(rawBucket) : null;
-  const score = pred?.risk_score ?? null;
-  const featureSummary = pred?.feature_summary ?? null;
-  const geminiExplanation = pred?.gemini_explanation ?? null;
-  const qualityFlags = pred?.quality_flags ?? null;
-  const nextSteps = bucket
-    ? nextStepsForBucket(bucket)
-    : readingTask?.analysis_json?.summary?.slice(0, 3) ?? [];
+  const score = session?.risk_score ?? null;
+  const geminiExplanation = session?.gemini_explanation ?? null;
+
+  // Feature summary from vowel task's analysis_json
+  const featureSummary = vowelTask?.analysis_json?.feature_summary ?? null;
+
+  const readingBiomarkers = readingTask?.analysis_json ?? null;
+
+  const qualityFlags = null; // quality_flags no longer stored
 
   // If no prediction yet, check session status
-  const sessionStatus = session?.status;
-  const hasPrediction = !!pred;
-  const isProcessing = !hasPrediction && (sessionStatus === "PENDING" || sessionStatus === "PROCESSING");
+  const isScoreProcessing = !hasPrediction && isStillProcessing;
+  const nextSteps = bucket ? nextStepsForBucket(bucket) : [];
 
   return (
     <>
@@ -144,6 +180,76 @@ export default function ResultsPage() {
       </nav>
 
       <main className="res-main">
+        {/* TASK STATUS PANEL — shown while any task is still running */}
+        {isStillProcessing && (
+          <div className="res-fade-up" style={{ marginBottom: "1.5rem" }}>
+            <div className="res-section-title">Analysis in progress…</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+              {[vowelTask, readingTask].map((t) => {
+                if (!t) return null;
+                const label = t.task_type === "SUSTAINED_VOWEL" ? "Sustained Vowel" : "Sentence Reading";
+                const status = t?.task_status ?? "PENDING";
+                const running = !TERMINAL.includes(status);
+                return (
+                  <div key={t.task_type} style={{
+                    display: "flex", alignItems: "center", gap: "0.75rem",
+                    padding: "0.75rem 1rem", borderRadius: "10px",
+                    background: "var(--res-card)", border: "1px solid var(--res-border)",
+                    fontSize: "0.82rem", fontWeight: 600,
+                  }}>
+                    {running ? (
+                      <div style={{
+                        width: 14, height: 14, borderRadius: "50%",
+                        border: "2px solid var(--res-border)", borderTopColor: "#21E6C1",
+                        animation: "res-spin 0.8s linear infinite", flexShrink: 0,
+                      }} />
+                    ) : (
+                      <div style={{ width: 14, height: 14, borderRadius: "50%", background: status === "ANALYZED" ? "#21E6C1" : "#EF4444", flexShrink: 0 }} />
+                    )}
+                    <span style={{ color: "var(--res-heading)" }}>{label}</span>
+                    <span style={{ marginLeft: "auto", color: running ? "#F7CC3B" : status === "ANALYZED" ? "#21E6C1" : "#EF4444" }}>
+                      {status === "PENDING" || status === "UPLOADED" ? "Waiting…"
+                        : status === "PROCESSING" ? "Analyzing…"
+                        : status === "ANALYZED" ? "Done"
+                        : status === "REJECTED_SHORT_AUDIO" ? "Too short"
+                        : "Failed"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* REJECTED SHORT AUDIO */}
+        {readingTask?.task_status === "REJECTED_SHORT_AUDIO" && (
+          <div className="res-fade-up" style={{
+            padding: "1rem 1.2rem", borderRadius: "10px", marginBottom: "1.5rem",
+            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+            fontSize: "0.85rem", color: "#EF4444", fontWeight: 600,
+          }}>
+            Reading audio was too short (minimum 13 seconds). Please take a new screening.
+          </div>
+        )}
+
+        {/* TASK FAILED */}
+        {(vowelTask?.task_status === "FAILED" || readingTask?.task_status === "FAILED") && (
+          <div className="res-fade-up" style={{
+            padding: "1rem 1.2rem", borderRadius: "10px", marginBottom: "1.5rem",
+            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+            fontSize: "0.85rem", color: "#EF4444",
+          }}>
+            {[vowelTask, readingTask]
+              .filter((t) => t?.task_status === "FAILED")
+              .map((t) => (
+                <div key={t.task_type}>
+                  <strong>{t.task_type === "SUSTAINED_VOWEL" ? "Vowel" : "Reading"} analysis failed:</strong>{" "}
+                  {t.error_message || "An unexpected error occurred."}
+                </div>
+              ))}
+          </div>
+        )}
+
         {/* SCORE HERO */}
         <div className="res-score-hero res-fade-up">
           <div className="res-score-left">
@@ -157,7 +263,7 @@ export default function ResultsPage() {
             </div>
             <div className="res-score-title">Parkinson&apos;s Speech Risk Score</div>
 
-            {isProcessing ? (
+            {isScoreProcessing ? (
               <>
                 <div className="res-score-num" style={{ color: "var(--res-muted)", fontSize: "2.5rem", marginTop: "0.5rem" }}>
                   Processing…
@@ -246,24 +352,43 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {/* READING ANALYSIS (if available and no ML prediction) */}
-        {!hasPrediction && readingTask?.analysis_json && (
+        {/* READING BIOMARKERS */}
+        {readingBiomarkers && readingTask?.task_status === "ANALYZED" && (
           <div className="res-fade-up res-delay-1">
-            <div className="res-section-title">Reading Task Analysis</div>
-            <div className="res-gemini-card">
-              <div className="res-gemini-header">
-                <div className="res-gemini-icon">G</div>
-                <div>
-                  <div className="res-gemini-title">Gemini Reading Analysis</div>
-                  <div className="res-gemini-sub">Speech fluency and alignment analysis</div>
-                </div>
-              </div>
-              <div className="res-gemini-body">
-                {readingTask.analysis_json.summary?.map((point, i) => (
-                  <p key={i} style={{ marginBottom: "0.5rem" }}>• {point}</p>
-                ))}
-              </div>
+            <div className="res-section-title">Reading Task Biomarkers</div>
+            <div className="res-features">
+              {[
+                { key: "pause_ratio",       label: "Pause Ratio",       fmt: (v) => `${(v * 100).toFixed(1)}%` },
+                { key: "pitch_std_hz",      label: "Pitch Variability", fmt: (v) => `${v} Hz` },
+                { key: "loudness_cv",       label: "Loudness Variability", fmt: (v) => v?.toFixed(3) },
+                { key: "speech_rate_wpm",   label: "Speech Rate",       fmt: (v) => v != null ? `${v} WPM` : "—" },
+                { key: "reading_speed_cps", label: "Reading Speed",     fmt: (v) => `${v} CPS` },
+              ].map(({ key, label, fmt }) => {
+                const val = readingBiomarkers[key];
+                if (val == null) return null;
+                return (
+                  <div className="res-feature-row" key={key}>
+                    <div className="res-feature-label">{label}</div>
+                    <div className="res-feature-bar-wrap">
+                      <div className="res-feature-bar">
+                        <div className="res-feature-bar-fill" style={{ width: "40%", background: "#21E6C1" }} />
+                      </div>
+                      <div className="res-feature-value" style={{ color: "#21E6C1" }}>{fmt(val)}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+            {readingBiomarkers.transcript && (
+              <div style={{
+                marginTop: "1rem", padding: "0.85rem 1rem", borderRadius: "10px",
+                background: "var(--res-card)", border: "1px solid var(--res-border)",
+                fontSize: "0.8rem", color: "var(--res-muted)", lineHeight: 1.6,
+              }}>
+                <strong style={{ color: "var(--res-heading)", display: "block", marginBottom: "0.35rem" }}>Transcript</strong>
+                {readingBiomarkers.transcript}
+              </div>
+            )}
           </div>
         )}
 
