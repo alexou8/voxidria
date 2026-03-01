@@ -1,0 +1,5 @@
+requests
+pydub
+praat-parselmouth
+numpy
+python-dotenv
