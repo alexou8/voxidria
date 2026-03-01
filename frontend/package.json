@@ -3,22 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.15.0",
-    "@auth0/nextjs-auth0": "^4.15.0",
-    "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-router-dom": "^7.13.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@vitejs/plugin-react": "^5.1.4",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "vite": "^7.3.1"
   }
 }
