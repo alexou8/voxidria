@@ -279,7 +279,6 @@ export default function RecordPage() {
       resetGuideAudio();
       setPhase("recording");
     } catch (err) {
-      console.log(err);
       setSessionError("Could not start session. Please try again.");
     }
   }
@@ -298,7 +297,6 @@ export default function RecordPage() {
       const ageParam = age != null ? `&age=${encodeURIComponent(age)}` : "";
       navigate(`/results?session=${sessionId}${ageParam}`);
     } catch (err) {
-      console.log(err);
       setUploadError("Upload failed. Please try again.");
       setPhase("recording");
     }
