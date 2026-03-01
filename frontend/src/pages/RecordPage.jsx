@@ -11,8 +11,9 @@ import {
 } from "../services/api";
 import "./RecordPage.css";
 
+//🇬🇧
 const READING_SENTENCES = {
-  en: { label: "English", flag: "🇬🇧", text: READING_PASSAGE },
+  en: { label: "English", flag: "🇨🇦", text: READING_PASSAGE },
   zh: { label: "Mandarin", flag: "🇨🇳", text: "飞速棕色的猫跳过了河边懒洋洋的狗。" },
   hi: { label: "Hindi", flag: "🇮🇳", text: "तेज़ भूरे लोमड़े ने नदी के किनारे आलसी कुत्ते के ऊपर से कूद गए।" },
 };
@@ -55,9 +56,11 @@ export default function RecordPage() {
   const [consentChecked, setConsentChecked] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [language, setLanguage] = useState("en");
+  const [languageChosen, setLanguageChosen] = useState(false);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [sessionError, setSessionError] = useState(null);
+  const [taskSwitchWarning, setTaskSwitchWarning] = useState("");
 
   // Guide audio (ElevenLabs)
   const guideAudioRef = useRef(null);
@@ -73,6 +76,7 @@ export default function RecordPage() {
   const analyserRef = useRef(null);
   const animFrameRef = useRef(null);
   const streamRef = useRef(null);
+  const taskSwitchTimerRef = useRef(null);
 
   const task = TASKS[currentTask];
   const isReadingTask = task?.id === "reading";
@@ -124,6 +128,7 @@ export default function RecordPage() {
     return () => {
       if (guideAudioUrl) URL.revokeObjectURL(guideAudioUrl);
       if (guideAudioRef.current) guideAudioRef.current.pause();
+      if (taskSwitchTimerRef.current) clearTimeout(taskSwitchTimerRef.current);
     };
   }, [guideAudioUrl]);
 
@@ -237,6 +242,20 @@ export default function RecordPage() {
     }
   }
 
+  function changeTests(t, i) {
+    if(recordings[task.id] || isReadingTask) {
+      setCurrentTask(i);
+    } else if(task.id === t.id){
+      // Nothing
+    } else {
+      setTaskSwitchWarning("Please complete the current recording before switching tasks.");
+      if (taskSwitchTimerRef.current) clearTimeout(taskSwitchTimerRef.current);
+      taskSwitchTimerRef.current = setTimeout(() => {
+        setTaskSwitchWarning("");
+      }, 3000);
+    }
+  }
+
   // ── INTRO / CONSENT ──────────────────────────────────────────────────────
   if (phase === "intro") {
     return (
@@ -299,7 +318,7 @@ export default function RecordPage() {
           <div className="rp-nav-logo"><img src="/logo.png" alt="Voxidria" height="38" /></div>
         </nav>
         <main className="rp-main">
-          <div className="rp-uploading-wrap rp-fade-up">
+          <div className="rp-uploading-wrap rp-fade-up">x
             <div className="rp-spinner" />
             <div className="rp-uploading-title">Analysing your voice…</div>
             <div className="rp-uploading-sub">
@@ -311,163 +330,192 @@ export default function RecordPage() {
         </main>
       </>
     );
-  }
-
-  // ── RECORDING ─────────────────────────────────────────────────────────────
-  return (
-    <>
-      {/* Language Picker Modal */}
-      {showLangPicker && (
-        <div className="rp-lang-overlay" onClick={() => setShowLangPicker(false)}>
-          <div className="rp-lang-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="rp-lang-modal-title">🌐 Choose your language</div>
-            <div className="rp-lang-modal-sub">
-              Select the language you'd like to read the sentence in.
-            </div>
-            <div className="rp-lang-options">
-              {Object.entries(READING_SENTENCES).map(([code, lang]) => (
-                <div
-                  key={code}
-                  className={`rp-lang-option${language === code ? " selected" : ""}`}
-                  onClick={() => setLanguage(code)}
+  } else {
+    // ── RECORDING ─────────────────────────────────────────────────────────────
+    return (
+      <>
+        {taskSwitchWarning && (
+          <div className="rp-flash-wrap" role="alert" aria-live="assertive">
+            <div className="rp-flash-popup">
+              <div className="rp-flash-glow" />
+              <div className="rp-flash-copy">
+                <div className="rp-flash-title">Hold up</div>
+                <div className="rp-flash-message">{taskSwitchWarning}</div>
+              </div>
+              <div className="x-button">
+                <button
+                  type="button"
+                  className="rp-flash-close"
+                  onClick={() => setTaskSwitchWarning("")}
+                  aria-label="Dismiss warning"
                 >
-                  <span className="rp-lang-flag">{lang.flag}</span>
-                  <span className="rp-lang-name">{lang.label}</span>
-                  {language === code && <span className="rp-lang-check">✓</span>}
-                </div>
-              ))}
-            </div>
-            <button className="rp-btn-submit" onClick={() => setShowLangPicker(false)}>
-              Confirm — {READING_SENTENCES[language].flag} {READING_SENTENCES[language].label}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <nav className="rp-nav">
-        <div className="rp-nav-logo" onClick={() => navigate("/")}>
-          <img src="/logo.png" alt="Voxidria" height="38" />
-        </div>
-        <button className="rp-btn-back" onClick={() => navigate("/")}>← Dashboard</button>
-      </nav>
-
-      <main className="rp-main">
-        {/* Stepper */}
-        <div className="rp-stepper rp-fade-up">
-          {TASKS.map((t, i) => (
-            <div
-              key={t.id}
-              className={`rp-step-item ${i === currentTask ? "active" : recordings[t.id] ? "done" : "pending"}`}
-            >
-              <div className="rp-step-num">
-                {recordings[t.id] && i !== currentTask ? "✓" : i + 1}
+                  x
+                </button>
               </div>
-              {t.title}
-            </div>
-          ))}
-        </div>
-
-        {/* Task Card */}
-        <div className="rp-task-card rp-fade-up">
-          <div className="rp-task-header">
-            <div className="rp-task-header-top">
-              <div>
-                <div className="rp-task-icon">{task.icon}</div>
-                <div className="rp-task-title">{task.title}</div>
-                <div className="rp-task-instruction">{task.instruction}</div>
-              </div>
-              {task.skippable && !isRecording && (
-                <button className="rp-btn-skip" onClick={skipTask}>Skip →</button>
-              )}
             </div>
           </div>
-          <div className="rp-task-body">
-            <div className="rp-task-detail">{task.detail}</div>
+        )}
 
-            {/* Language badge + sentence for reading task */}
-            {isReadingTask && (
-              <>
-                <div className="rp-lang-badge" onClick={() => setShowLangPicker(true)}>
-                  {sentence.flag} {sentence.label} · Change language →
-                </div>
-                <div className="rp-prompt-box">{sentence.text}</div>
-              </>
-            )}
-
-            {/* Prompt for pitch task */}
-            {!isReadingTask && <div className="rp-prompt-box">&quot;Ahhh…&quot;</div>}
-
-            {/* Medical assistant guide */}
-            <div className="rp-guide-row" style={{ marginBottom: "1rem" }}>
-              <button
-                className="rp-btn-guide"
-                onClick={() => playMedicalAssistant(
-                  task.id === "sustain" ? "AHHH_TEST" : "READING_TEST"
-                )}
-                disabled={guideLoading}
-              >
-                {guideLoading ? "Loading…" : `🎧 Hear ${task.title} instructions`}
-              </button>
-              {guideAudioUrl && <audio ref={guideAudioRef} controls src={guideAudioUrl} className="rp-audio" />}
-              {guideError && <p className="rp-error">{guideError}</p>}
-            </div>
-
-            {/* Waveform */}
-            <div className="rp-waveform">
-              {bars.map((h, i) => (
-                <div
-                  key={i}
-                  className={`rp-wave-bar${!isRecording ? " inactive" : ""}`}
-                  style={{ height: h }}
-                />
-              ))}
-            </div>
-
-            {/* Timer */}
-            {isRecording && (
-              <>
-                <div className="rp-timer">
-                  {String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}
-                </div>
-                <div className="rp-timer-bar">
+        {/* Language Picker Modal */}
+        {showLangPicker && !languageChosen && (
+          <div className="rp-lang-overlay" onClick={() => setShowLangPicker(false)}>
+            <div className="rp-lang-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="rp-lang-modal-title">🌐 Choose your language</div>
+              <div className="rp-lang-modal-sub">
+                Select the language you'd like to read the sentence in.
+              </div>
+              <div className="rp-lang-options">
+                {Object.entries(READING_SENTENCES).map(([code, lang]) => (
                   <div
-                    className="rp-timer-fill"
-                    style={{ width: `${Math.min((elapsed / task.duration) * 100, 100)}%` }}
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Recorded badge */}
-            {hasCurrentRecording && !isRecording && (
-              <div className="rp-recorded-badge">
-                <div className="rp-dot-green" /> Recording saved · {elapsed}s captured · Re-record below to redo
+                    key={code}
+                    className={`rp-lang-option${language === code ? " selected" : ""}`}
+                    onClick={() => setLanguage(code)}
+                  >
+                    <span className="rp-lang-flag">{lang.flag}</span>
+                    <span className="rp-lang-name">{lang.label}</span>
+                    {language === code && <span className="rp-lang-check">✓</span>}
+                  </div>
+                ))}
               </div>
-            )}
-
-            {/* Record button */}
-            <div className="rp-record-btn-wrap">
-              <button
-                className={`rp-record-btn ${isRecording ? "recording" : "idle"}`}
-                onClick={isRecording ? stopRecording : startRecording}
-              >
-                {isRecording ? "⏹" : "⏺"}
+              <button className="rp-btn-submit" onClick={() => {
+                setShowLangPicker(false);
+                setLanguageChosen(true);
+              }}>
+                Confirm — {READING_SENTENCES[language].flag} {READING_SENTENCES[language].label}
               </button>
-              <div className="rp-record-label">{isRecording ? "Tap to stop" : "Tap to record"}</div>
             </div>
-
-            <button
-              className="rp-btn-submit"
-              disabled={!hasCurrentRecording || isRecording}
-              onClick={nextTask}
-            >
-              {currentTask < TASKS.length - 1
-                ? `Next Task → (${currentTask + 2}/${TASKS.length})`
-                : "Submit All Recordings →"}
-            </button>
           </div>
-        </div>
-      </main>
-    </>
-  );
+        )}
+        <nav className="rp-nav">
+          <div className="rp-nav-logo" onClick={() => navigate("/")}>
+            <img src="/logo.png" alt="Voxidria" height="38" />
+          </div>
+          <button className="rp-btn-back" onClick={() => navigate("/")}>← Dashboard</button>
+        </nav>
+
+        <main className="rp-main">
+          {/* Stepper */}
+          <div className="rp-stepper rp-fade-up">
+            {TASKS.map((t, i) => (
+              <button key={t.id} className={`unstyled-btn rp-step-item ${i === currentTask ? "active" : recordings[t.id] ? "done" : "pending"} `} 
+                onClick={() => changeTests(t, i)}>
+                <div
+                  className={`rp-step-item ${i === currentTask ? "active" : recordings[t.id] ? "done" : "pending"} `}
+                >
+                  <div className="rp-step-num">
+                    {recordings[t.id] && i !== currentTask ? "✓" : i + 1}
+                  </div>
+                  {t.title}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Task Card */}
+          <div className="rp-task-card rp-fade-up">
+            <div className="rp-task-header">
+              <div className="rp-task-header-top">
+                <div>
+                  <div className="rp-task-icon">{task.icon}</div>
+                  <div className="rp-task-title">{task.title}</div>
+                  <div className="rp-task-instruction">{task.instruction}</div>
+                </div>
+                {task.skippable && !isRecording && (
+                  <button className="rp-btn-skip" onClick={skipTask}>Skip →</button>
+                )}
+              </div>
+            </div>
+            <div className="rp-task-body">
+              <div className="rp-task-detail">{task.detail}</div>
+
+              {/* Language badge + sentence for reading task */}
+              {isReadingTask && (
+                <>
+                  <div className="rp-lang-badge" onClick={() => {
+                    setShowLangPicker(true);
+                    setLanguageChosen(false);
+                    }}>
+                    {sentence.flag} {sentence.label} · Change language →
+                  </div>
+                  <div className="rp-prompt-box">{sentence.text}</div>
+                </>
+              )}
+
+              {/* Prompt for pitch task */}
+              {!isReadingTask && <div className="rp-prompt-box">&quot;Ahhh…&quot;</div>}
+
+              {/* Medical assistant guide */}
+              <div className="rp-guide-row" style={{ marginBottom: "1rem" }}>
+                <button
+                  className="rp-btn-guide"
+                  onClick={() => playMedicalAssistant(
+                    task.id === "sustain" ? "AHHH_TEST" : "READING_TEST"
+                  )}
+                  disabled={guideLoading}
+                >
+                  {guideLoading ? "Loading…" : `🎧 Hear ${task.title} instructions`}
+                </button>
+                {guideAudioUrl && <audio ref={guideAudioRef} controls src={guideAudioUrl} className="rp-audio" />}
+                {guideError && <p className="rp-error">{guideError}</p>}
+              </div>
+
+              {/* Waveform */}
+              <div className="rp-waveform">
+                {bars.map((h, i) => (
+                  <div
+                    key={i}
+                    className={`rp-wave-bar${!isRecording ? " inactive" : ""}`}
+                    style={{ height: h }}
+                  />
+                ))}
+              </div>
+
+              {/* Timer */}
+              {isRecording && (
+                <>
+                  <div className="rp-timer">
+                    {String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}
+                  </div>
+                  <div className="rp-timer-bar">
+                    <div
+                      className="rp-timer-fill"
+                      style={{ width: `${Math.min((elapsed / task.duration) * 100, 100)}%` }}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Recorded badge */}
+              {hasCurrentRecording && !isRecording && (
+                <div className="rp-recorded-badge">
+                  <div className="rp-dot-green" /> Recording saved · {elapsed}s captured · Re-record below to redo
+                </div>
+              )}
+
+              {/* Record button */}
+              <div className="rp-record-btn-wrap">
+                <button
+                  className={`rp-record-btn ${isRecording ? "recording" : "idle"}`}
+                  onClick={isRecording ? stopRecording : startRecording}
+                >
+                  {isRecording ? "⏹" : "⏺"}
+                </button>
+                <div className="rp-record-label">{isRecording ? "Tap to stop" : "Tap to record"}</div>
+              </div>
+
+              <button
+                className="rp-btn-submit"
+                disabled={!hasCurrentRecording || isRecording}
+                onClick={nextTask}
+              >
+                {currentTask < TASKS.length - 1
+                  ? `Next Task → (${currentTask + 2}/${TASKS.length})`
+                  : "Submit All Recordings →"}
+              </button>
+            </div>
+          </div>
+        </main>
+      </>
+    );
+  }
 }
