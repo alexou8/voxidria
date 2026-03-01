@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
-import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import {
   createSession,
   getUploadUrl,
@@ -9,138 +9,202 @@ import {
   READING_PASSAGE,
   synthesizeSpeech,
 } from "../services/api";
-import ResultsCard from "../components/ResultsCard";
 import "./RecordPage.css";
+
+const READING_SENTENCES = {
+  en: { label: "English", flag: "🇬🇧", text: READING_PASSAGE },
+  zh: { label: "Mandarin", flag: "🇨🇳", text: "飞速棕色的猫跳过了河边懒洋洋的狗。" },
+  hi: { label: "Hindi", flag: "🇮🇳", text: "तेज़ भूरे लोमड़े ने नदी के किनारे आलसी कुत्ते के ऊपर से कूद गए।" },
+};
 
 const TASKS = [
   {
-    type: "SUSTAINED_VOWEL",
-    title: "Sustained Vowel",
-    durationSeconds: 5,
-    instruction: 'Take a deep breath and say "ahhh" for about 5 seconds, as steadily as you can.',
-    icon: "🎵",
+    id: "sustain",
+    backendType: "SUSTAINED_VOWEL",
+    step: 1,
+    title: "Sustained Pitch",
+    instruction: 'Say "Ahhh" clearly and steadily',
+    detail: 'Hold the vowel sound for at least 5 seconds in a quiet environment. Keep a steady volume and pitch. Do not stop and restart.',
+    duration: 5,
+    icon: "🎤",
+    skippable: true,
   },
   {
-    type: "READING",
-    title: "Reading Task",
-    durationSeconds: 15,
-    instruction: "Read the following passage aloud at your natural pace:",
-    passage: READING_PASSAGE,
+    id: "reading",
+    backendType: "READING",
+    step: 2,
+    title: "Sentence Reading",
+    instruction: "Read the sentence below aloud at a natural pace",
+    detail: "Read the sentence clearly, as you would in normal conversation. Do not rush or slow down artificially.",
+    duration: 8,
     icon: "📖",
-  },
-  {
-    type: "DDK",
-    title: "Rapid Syllables",
-    durationSeconds: 10,
-    instruction: 'Repeat "pa-ta-ka" as quickly and clearly as you can for about 10 seconds.',
-    icon: "🔄",
+    skippable: false,
   },
 ];
 
-// Step identifiers for the flow
-const STEPS = { CONSENT: "consent", TASK: "task", UPLOADING: "uploading", RESULTS: "results" };
-const TASK_GUIDE_SECTION = {
-  SUSTAINED_VOWEL: "AHHH_TEST",
-  READING: "READING_TEST",
-  DDK: "PA_TA_KA_TEST",
-};
-const TASK_GUIDE_LABEL = {
-  SUSTAINED_VOWEL: 'Hear "ahhh" instructions',
-  READING: "Hear reading instructions",
-  DDK: 'Hear "pa-ta-ka" instructions',
-};
-
 export default function RecordPage() {
+  const navigate = useNavigate();
   const { getAccessTokenSilently } = useAuth0();
-  const recorder = useVoiceRecorder();
-  const guideAudioRef = useRef(null);
-  const latestGuideRequestId = useRef(0);
 
-  const [step, setStep] = useState(STEPS.CONSENT);
-  const [selectedTask, setSelectedTask] = useState(TASKS[1]); // default: READING
+  const [currentTask, setCurrentTask] = useState(0);
+  const [phase, setPhase] = useState("intro");
+  const [isRecording, setIsRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [recordings, setRecordings] = useState({});
+  const [bars, setBars] = useState(Array(24).fill(4));
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [language, setLanguage] = useState("en");
+  const [showLangPicker, setShowLangPicker] = useState(false);
   const [sessionId, setSessionId] = useState(null);
-  const [tasks, setTasks] = useState([]);
-  const [results, setResults] = useState(null);
-  const [error, setError] = useState(null);
+  const [sessionError, setSessionError] = useState(null);
+
+  // Guide audio (ElevenLabs)
+  const guideAudioRef = useRef(null);
+  const latestGuideReqId = useRef(0);
   const [guideAudioUrl, setGuideAudioUrl] = useState("");
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideError, setGuideError] = useState(null);
 
+  // MediaRecorder refs
+  const mediaRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animFrameRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const task = TASKS[currentTask];
+  const isReadingTask = task?.id === "reading";
+  const sentence = READING_SENTENCES[language];
+  const hasCurrentRecording = !!recordings[task?.id];
+
+  // Show language picker when arriving at reading task recording phase
   useEffect(() => {
-    if (!guideAudioUrl || !guideAudioRef.current) return;
-    guideAudioRef.current.currentTime = 0;
-    guideAudioRef.current.play().catch(() => {
-      // Some browsers require explicit user interaction for playback.
-    });
-  }, [guideAudioUrl]);
+    if (task?.id === "reading" && phase === "recording") {
+      setShowLangPicker(true);
+    }
+  }, [currentTask, phase, task?.id]);
 
-  useEffect(
-    () => () => {
-      if (guideAudioRef.current) {
-        guideAudioRef.current.pause();
+  // Waveform animation
+  useEffect(() => {
+    if (!isRecording) {
+      cancelAnimationFrame(animFrameRef.current);
+      setBars(Array(24).fill(4));
+      return;
+    }
+    const animate = () => {
+      if (analyserRef.current) {
+        const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(data);
+        const step = Math.floor(data.length / 24);
+        setBars(Array.from({ length: 24 }, (_, i) => Math.max(4, (data[i * step] / 255) * 56 + 4)));
+      } else {
+        setBars((prev) => prev.map(() => Math.random() * 52 + 4));
       }
-    },
-    []
-  );
+      animFrameRef.current = requestAnimationFrame(animate);
+    };
+    animFrameRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animFrameRef.current);
+  }, [isRecording]);
 
+  // Elapsed timer
+  useEffect(() => {
+    if (isRecording) {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [isRecording]);
+
+  // Cleanup guide audio on unmount
   useEffect(() => {
     return () => {
-      if (guideAudioUrl) {
-        URL.revokeObjectURL(guideAudioUrl);
-      }
+      if (guideAudioUrl) URL.revokeObjectURL(guideAudioUrl);
+      if (guideAudioRef.current) guideAudioRef.current.pause();
     };
   }, [guideAudioUrl]);
 
-  const formatDuration = (seconds) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  };
-
-  const resetGuide = () => {
-    latestGuideRequestId.current += 1;
-    if (guideAudioRef.current) {
-      guideAudioRef.current.pause();
-      guideAudioRef.current.currentTime = 0;
-    }
-    setGuideAudioUrl("");
-    setGuideLoading(false);
-    setGuideError(null);
-  };
+  // Play guide audio when URL changes
+  useEffect(() => {
+    if (!guideAudioUrl || !guideAudioRef.current) return;
+    guideAudioRef.current.currentTime = 0;
+    guideAudioRef.current.play().catch(() => {});
+  }, [guideAudioUrl]);
 
   const playMedicalAssistant = async (section) => {
-    const requestId = latestGuideRequestId.current + 1;
-    latestGuideRequestId.current = requestId;
-
+    const reqId = latestGuideReqId.current + 1;
+    latestGuideReqId.current = reqId;
     if (guideAudioRef.current) {
       guideAudioRef.current.pause();
       guideAudioRef.current.currentTime = 0;
     }
-
     setGuideError(null);
     setGuideLoading(true);
-
     try {
-      const audioBlob = await synthesizeSpeech(
-        "",
-        "MEDICAL_ASSISTANT",
-        getAccessTokenSilently,
-        { section }
-      );
-      if (latestGuideRequestId.current !== requestId) return;
-      setGuideAudioUrl(URL.createObjectURL(audioBlob));
+      const blob = await synthesizeSpeech("", "MEDICAL_ASSISTANT", getAccessTokenSilently, { section });
+      if (latestGuideReqId.current !== reqId) return;
+      setGuideAudioUrl(URL.createObjectURL(blob));
     } catch (err) {
-      if (latestGuideRequestId.current !== requestId) return;
-      setGuideError(err.message || "Could not load medical assistant audio.");
+      if (latestGuideReqId.current !== reqId) return;
+      setGuideError(err.message || "Could not load audio.");
     } finally {
-      if (latestGuideRequestId.current === requestId) {
-        setGuideLoading(false);
-      }
+      if (latestGuideReqId.current === reqId) setGuideLoading(false);
     }
   };
 
-  const handleConsent = async () => {
-    setError(null);
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+      chunksRef.current = [];
+      const mr = new MediaRecorder(stream);
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        setRecordings((prev) => ({ ...prev, [task.id]: blob }));
+        stream.getTracks().forEach((t) => t.stop());
+      };
+      mr.start();
+      mediaRef.current = mr;
+      setIsRecording(true);
+    } catch {
+      alert("Microphone access denied. Please allow microphone access and try again.");
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRef.current && isRecording) {
+      mediaRef.current.stop();
+      setIsRecording(false);
+    }
+  }
+
+  function nextTask() {
+    if (currentTask < TASKS.length - 1) {
+      setCurrentTask((t) => t + 1);
+      setElapsed(0);
+    } else {
+      setPhase("uploading");
+      uploadAll();
+    }
+  }
+
+  function skipTask() {
+    setCurrentTask((t) => t + 1);
+    setElapsed(0);
+  }
+
+  async function handleConsent() {
+    setSessionError(null);
     try {
       const deviceMeta = {
         userAgent: navigator.userAgent,
@@ -148,257 +212,262 @@ export default function RecordPage() {
         screenWidth: window.screen.width,
       };
       const data = await createSession("1.0", deviceMeta, getAccessTokenSilently);
-      resetGuide();
       setSessionId(data.session_id);
-      setTasks(data.tasks);
-      setStep(STEPS.TASK);
+      setPhase("recording");
     } catch (err) {
-      console.error("Create session failed:", err);
-      setError("Could not start session. Please try again.");
+      setSessionError("Could not start session. Please try again.");
     }
-  };
+  }
 
-  const handleAnalyze = async () => {
-    if (!recorder.audioBlob || !sessionId) return;
-    setStep(STEPS.UPLOADING);
-    setError(null);
-
+  async function uploadAll() {
+    setUploadError(null);
     try {
-      // 1. Get signed upload URL from backend
-      const contentType = recorder.audioBlob.type || "audio/webm";
-      const { signedUrl } = await getUploadUrl(
-        sessionId,
-        selectedTask.type,
-        contentType,
-        getAccessTokenSilently
-      );
-
-      // 2. Upload audio directly to Supabase Storage (no secrets sent to browser)
-      await uploadAudioToStorage(signedUrl, recorder.audioBlob);
-
-
-      const currentTask = tasks.find(
-        (t) => t.task_type === selectedTask.type
-      );
-
-      // 3. Finalize task — backend runs Gemini reading analysis for READING tasks
-      const finalized = await finalizeTask(
-        currentTask.task_id,
-        "",           // transcript: Web Speech API integration is a stretch goal
-        getAccessTokenSilently
-      );
-
-      setResults({
-        task_type: selectedTask.type,
-        task_status: finalized.task_status,
-        analysis_json: finalized.analysis_json,
-        session_id: sessionId,
-      });
-      setStep(STEPS.RESULTS);
+      for (const taskDef of TASKS) {
+        const blob = recordings[taskDef.id];
+        if (!blob) continue;
+        const contentType = blob.type || "audio/webm";
+        const { signedUrl } = await getUploadUrl(sessionId, taskDef.backendType, contentType, getAccessTokenSilently);
+        await uploadAudioToStorage(signedUrl, blob);
+        await finalizeTask(sessionId, taskDef.backendType, "", getAccessTokenSilently);
+      }
+      navigate(`/results?session=${sessionId}`);
     } catch (err) {
-      setError(err.message || "Analysis failed. Please try again.");
-      setStep(STEPS.TASK);
+      setUploadError("Upload failed. Please try again.");
+      setPhase("recording");
     }
-  };
+  }
 
-  const handleReset = () => {
-    resetGuide();
-    recorder.reset();
-    setResults(null);
-    setError(null);
-    setStep(STEPS.TASK);
-  };
-
-  const handleStartOver = () => {
-    resetGuide();
-    recorder.reset();
-    setResults(null);
-    setError(null);
-    setSessionId(null);
-    setStep(STEPS.CONSENT);
-  };
-
-  // --- Consent screen ---
-  if (step === STEPS.CONSENT) {
+  // ── INTRO / CONSENT ──────────────────────────────────────────────────────
+  if (phase === "intro") {
     return (
-      <div className="record-page">
-        <div className="consent-card">
-          <h1>Before You Begin</h1>
-          <div className="consent-body">
-            <p>
-              Voxidria will record short voice samples and analyze them to
-              estimate your speech risk profile. By proceeding, you agree to:
-            </p>
-            <ul>
-              <li>Allow microphone access for recording</li>
-              <li>Your audio being stored securely for analysis</li>
-              <li>Receiving a screening score — <strong>not a medical diagnosis</strong></li>
-            </ul>
-            <div className="disclaimer-box">
-              <strong>Medical Disclaimer:</strong> This tool does not diagnose
-              Parkinson's disease or any other condition. If you are concerned
-              about your health, please consult a qualified healthcare
-              professional.
+      <>
+        <nav className="rp-nav">
+          <div className="rp-nav-logo" onClick={() => navigate("/")}>
+            <img src="/logo.png" alt="Voxidria" height="38" />
+          </div>
+          <button className="rp-btn-back" onClick={() => navigate("/")}>← Back</button>
+        </nav>
+        <main className="rp-main">
+          <div className="rp-consent-wrap rp-fade-up">
+            <div className="rp-task-icon">🎙️</div>
+            <div className="rp-consent-title">Before you begin</div>
+            <div className="rp-consent-sub">
+              You'll complete up to 2 short voice recordings. Each takes under 15 seconds.
+              Make sure you're in a quiet room with your microphone unobstructed.
             </div>
-            <div className="assistant-guide">
+            <ul className="rp-consent-list">
+              <li>Your voice data is stored securely and linked only to your account.</li>
+              <li>Audio may be deleted at any time from your dashboard.</li>
+              <li>Results are a screening estimate only — not a medical diagnosis.</li>
+              <li>By proceeding you consent to voice data collection for analysis.</li>
+            </ul>
+            <label className="rp-consent-check">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => setConsentChecked(e.target.checked)}
+              />
+              <span>I understand this is a screening tool, not a medical diagnosis, and I consent to voice recording.</span>
+            </label>
+            {/* Medical assistant guide */}
+            <div className="rp-guide-row">
               <button
-                className="btn btn-outline"
+                className="rp-btn-guide"
                 onClick={() => playMedicalAssistant("CONSENT_OVERVIEW")}
                 disabled={guideLoading}
               >
-                {guideLoading ? "Loading assistant..." : "Hear Medical Assistant Overview"}
+                {guideLoading ? "Loading assistant…" : "🎧 Hear Medical Assistant Overview"}
               </button>
-              {guideAudioUrl && (
-                <audio
-                  ref={guideAudioRef}
-                  className="audio-preview"
-                  controls
-                  src={guideAudioUrl}
-                />
-              )}
-              {guideError && <p className="error-msg">{guideError}</p>}
+              {guideAudioUrl && <audio ref={guideAudioRef} controls src={guideAudioUrl} className="rp-audio" />}
+              {guideError && <p className="rp-error">{guideError}</p>}
             </div>
-          </div>
-          {error && <p className="error-msg">{error}</p>}
-          <button className="btn btn-primary btn-lg" onClick={handleConsent}>
-            I Understand — Continue
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Uploading / analyzing screen ---
-  if (step === STEPS.UPLOADING) {
-    return (
-      <div className="record-page">
-        <div className="uploading-card">
-          <div className="spinner" aria-label="Analyzing" />
-          <h2>Analyzing your recording…</h2>
-          <p className="text-muted">
-            Uploading audio and running speech analysis. This may take a few seconds.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Results screen ---
-  if (step === STEPS.RESULTS && results) {
-    return (
-      <div className="record-page">
-        <ResultsCard results={results} />
-        <div className="results-actions">
-          <button className="btn btn-primary" onClick={handleReset}>
-            Record Another Task
-          </button>
-          <button className="btn btn-outline" onClick={handleStartOver}>
-            Start New Session
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Recording screen ---
-  return (
-    <div className="record-page">
-      <h1>Voice Recording</h1>
-
-      {/* Task selector */}
-      <div className="task-selector">
-        <label className="label">Select a task:</label>
-        <div className="task-cards">
-          {TASKS.map((task) => (
-            <button
-              key={task.type}
-              className={`task-card ${selectedTask.type === task.type ? "task-card--active" : ""}`}
-              onClick={() => { setSelectedTask(task); handleReset(); }}
-            >
-              <span className="task-card-icon">{task.icon}</span>
-              <strong>{task.title}</strong>
-              <span className="task-duration">{task.durationSeconds}s</span>
+            {sessionError && <p className="rp-error">{sessionError}</p>}
+            <button className="rp-btn-submit" disabled={!consentChecked} onClick={handleConsent}>
+              Begin Screening →
             </button>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  // ── UPLOADING ─────────────────────────────────────────────────────────────
+  if (phase === "uploading") {
+    return (
+      <>
+        <nav className="rp-nav">
+          <div className="rp-nav-logo"><img src="/logo.png" alt="Voxidria" height="38" /></div>
+        </nav>
+        <main className="rp-main">
+          <div className="rp-uploading-wrap rp-fade-up">
+            <div className="rp-spinner" />
+            <div className="rp-uploading-title">Analysing your voice…</div>
+            <div className="rp-uploading-sub">
+              Running feature extraction and ML inference.<br />
+              This usually takes under 10 seconds.
+            </div>
+            {uploadError && <p className="rp-error" style={{ marginTop: "1rem" }}>{uploadError}</p>}
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  // ── RECORDING ─────────────────────────────────────────────────────────────
+  return (
+    <>
+      {/* Language Picker Modal */}
+      {showLangPicker && (
+        <div className="rp-lang-overlay" onClick={() => setShowLangPicker(false)}>
+          <div className="rp-lang-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="rp-lang-modal-title">🌐 Choose your language</div>
+            <div className="rp-lang-modal-sub">
+              Select the language you'd like to read the sentence in.
+            </div>
+            <div className="rp-lang-options">
+              {Object.entries(READING_SENTENCES).map(([code, lang]) => (
+                <div
+                  key={code}
+                  className={`rp-lang-option${language === code ? " selected" : ""}`}
+                  onClick={() => setLanguage(code)}
+                >
+                  <span className="rp-lang-flag">{lang.flag}</span>
+                  <span className="rp-lang-name">{lang.label}</span>
+                  {language === code && <span className="rp-lang-check">✓</span>}
+                </div>
+              ))}
+            </div>
+            <button className="rp-btn-submit" onClick={() => setShowLangPicker(false)}>
+              Confirm — {READING_SENTENCES[language].flag} {READING_SENTENCES[language].label}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <nav className="rp-nav">
+        <div className="rp-nav-logo" onClick={() => navigate("/")}>
+          <img src="/logo.png" alt="Voxidria" height="38" />
+        </div>
+        <button className="rp-btn-back" onClick={() => navigate("/")}>← Dashboard</button>
+      </nav>
+
+      <main className="rp-main">
+        {/* Stepper */}
+        <div className="rp-stepper rp-fade-up">
+          {TASKS.map((t, i) => (
+            <div
+              key={t.id}
+              className={`rp-step-item ${i === currentTask ? "active" : recordings[t.id] ? "done" : "pending"}`}
+            >
+              <div className="rp-step-num">
+                {recordings[t.id] && i !== currentTask ? "✓" : i + 1}
+              </div>
+              {t.title}
+            </div>
           ))}
         </div>
-      </div>
 
-      {/* Task instruction */}
-      <div className="task-instruction">
-        <p>{selectedTask.instruction}</p>
-        {selectedTask.passage && (
-          <blockquote className="reading-passage">
-            "{selectedTask.passage}"
-          </blockquote>
-        )}
-        <div className="assistant-guide">
-          <button
-            className="btn btn-outline btn-sm"
-            onClick={() => playMedicalAssistant(TASK_GUIDE_SECTION[selectedTask.type])}
-            disabled={guideLoading}
-          >
-            {guideLoading ? "Loading assistant..." : TASK_GUIDE_LABEL[selectedTask.type]}
-          </button>
-          {guideAudioUrl && (
-            <audio
-              ref={guideAudioRef}
-              className="audio-preview"
-              controls
-              src={guideAudioUrl}
-            />
-          )}
-          {guideError && <p className="error-msg">{guideError}</p>}
-        </div>
-      </div>
-
-      {/* Recorder controls */}
-      <div className="recorder-section">
-        {recorder.error && <p className="error-msg">{recorder.error}</p>}
-        {error && <p className="error-msg">{error}</p>}
-
-        <div className="recorder-visual">
-          <div className={`mic-circle ${recorder.isRecording ? "recording" : ""}`}>
-            <span className="mic-icon">🎙️</span>
+        {/* Task Card */}
+        <div className="rp-task-card rp-fade-up">
+          <div className="rp-task-header">
+            <div className="rp-task-header-top">
+              <div>
+                <div className="rp-task-icon">{task.icon}</div>
+                <div className="rp-task-title">{task.title}</div>
+                <div className="rp-task-instruction">{task.instruction}</div>
+              </div>
+              {task.skippable && !isRecording && (
+                <button className="rp-btn-skip" onClick={skipTask}>Skip →</button>
+              )}
+            </div>
           </div>
-          <p className="recorder-timer">{formatDuration(recorder.duration)}</p>
-        </div>
+          <div className="rp-task-body">
+            <div className="rp-task-detail">{task.detail}</div>
 
-        <div className="recorder-actions">
-          {!recorder.isRecording && !recorder.audioBlob && (
-            <button className="btn btn-primary btn-lg" onClick={recorder.startRecording}>
-              Start Recording
-            </button>
-          )}
+            {/* Language badge + sentence for reading task */}
+            {isReadingTask && (
+              <>
+                <div className="rp-lang-badge" onClick={() => setShowLangPicker(true)}>
+                  {sentence.flag} {sentence.label} · Change language →
+                </div>
+                <div className="rp-prompt-box">{sentence.text}</div>
+              </>
+            )}
 
-          {recorder.isRecording && (
-            <button className="btn btn-danger btn-lg" onClick={recorder.stopRecording}>
-              Stop Recording
-            </button>
-          )}
+            {/* Prompt for pitch task */}
+            {!isReadingTask && <div className="rp-prompt-box">&quot;Ahhh…&quot;</div>}
 
-          {recorder.audioBlob && !recorder.isRecording && (
-            <>
+            {/* Medical assistant guide */}
+            <div className="rp-guide-row" style={{ marginBottom: "1rem" }}>
               <button
-                className="btn btn-primary btn-lg"
-                onClick={handleAnalyze}
+                className="rp-btn-guide"
+                onClick={() => playMedicalAssistant(
+                  task.id === "sustain" ? "AHHH_TEST" : "READING_TEST"
+                )}
+                disabled={guideLoading}
               >
-                Analyze Recording
+                {guideLoading ? "Loading…" : `🎧 Hear ${task.title} instructions`}
               </button>
-              <button className="btn btn-outline" onClick={handleReset}>
-                Discard &amp; Re-record
-              </button>
-            </>
-          )}
-        </div>
+              {guideAudioUrl && <audio ref={guideAudioRef} controls src={guideAudioUrl} className="rp-audio" />}
+              {guideError && <p className="rp-error">{guideError}</p>}
+            </div>
 
-        {recorder.audioBlob && (
-          <audio
-            className="audio-preview"
-            controls
-            src={URL.createObjectURL(recorder.audioBlob)}
-          />
-        )}
-      </div>
-    </div>
+            {/* Waveform */}
+            <div className="rp-waveform">
+              {bars.map((h, i) => (
+                <div
+                  key={i}
+                  className={`rp-wave-bar${!isRecording ? " inactive" : ""}`}
+                  style={{ height: h }}
+                />
+              ))}
+            </div>
+
+            {/* Timer */}
+            {isRecording && (
+              <>
+                <div className="rp-timer">
+                  {String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}
+                </div>
+                <div className="rp-timer-bar">
+                  <div
+                    className="rp-timer-fill"
+                    style={{ width: `${Math.min((elapsed / task.duration) * 100, 100)}%` }}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Recorded badge */}
+            {hasCurrentRecording && !isRecording && (
+              <div className="rp-recorded-badge">
+                <div className="rp-dot-green" /> Recording saved · {elapsed}s captured · Re-record below to redo
+              </div>
+            )}
+
+            {/* Record button */}
+            <div className="rp-record-btn-wrap">
+              <button
+                className={`rp-record-btn ${isRecording ? "recording" : "idle"}`}
+                onClick={isRecording ? stopRecording : startRecording}
+              >
+                {isRecording ? "⏹" : "⏺"}
+              </button>
+              <div className="rp-record-label">{isRecording ? "Tap to stop" : "Tap to record"}</div>
+            </div>
+
+            <button
+              className="rp-btn-submit"
+              disabled={!hasCurrentRecording || isRecording}
+              onClick={nextTask}
+            >
+              {currentTask < TASKS.length - 1
+                ? `Next Task → (${currentTask + 2}/${TASKS.length})`
+                : "Submit All Recordings →"}
+            </button>
+          </div>
+        </div>
+      </main>
+    </>
   );
 }
