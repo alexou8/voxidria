@@ -58,6 +58,11 @@ export default function RecordPage() {
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [sessionError, setSessionError] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileError, setFileError] = useState(null);
+  const [readingDuration, setReadingDuration] = useState(null);
+
+  const fileInputRef = useRef(null);
 
   // Guide audio (ElevenLabs)
   const guideAudioRef = useRef(null);
@@ -155,7 +160,49 @@ export default function RecordPage() {
     }
   };
 
+  // ── File upload helpers ───────────────────────────────────────────────────
+  const ACCEPTED_EXTS = [".wav", ".mp3", ".m4a", ".aac", ".ogg"];
+  const MAX_BYTES = 25 * 1024 * 1024;
+
+  function validateFile(file) {
+    const ext = (file.name.match(/\.[^.]+$/) ?? [""])[0].toLowerCase();
+    if (!ACCEPTED_EXTS.includes(ext)) return "Invalid type. Accepted: .wav .mp3 .m4a .aac .ogg";
+    if (file.size > MAX_BYTES) return "File too large. Maximum is 25 MB.";
+    return null;
+  }
+
+  function applyFile(file, taskId) {
+    const err = validateFile(file);
+    if (err) { setFileError(err); return; }
+    setFileError(null);
+    setRecordings((prev) => ({ ...prev, [taskId]: file }));
+    if (taskId === "reading") {
+      const url = URL.createObjectURL(file);
+      const audio = new Audio();
+      audio.onloadedmetadata = () => { setReadingDuration(Math.floor(audio.duration)); URL.revokeObjectURL(url); };
+      audio.onerror = () => URL.revokeObjectURL(url);
+      audio.src = url;
+    }
+  }
+
+  function handleFileInput(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) applyFile(file, task.id);
+  }
+
+  function handleDragOver(e) { e.preventDefault(); setIsDragging(true); }
+  function handleDragLeave() { setIsDragging(false); }
+  function handleDrop(e) {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) applyFile(file, task.id);
+  }
+
+  // ── Recording ─────────────────────────────────────────────────────────────
   async function startRecording() {
+    if (task?.id === "reading") setReadingDuration(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -185,6 +232,7 @@ export default function RecordPage() {
     if (mediaRef.current && isRecording) {
       mediaRef.current.stop();
       setIsRecording(false);
+      if (task?.id === "reading") setReadingDuration(elapsed);
     }
   }
 
@@ -228,7 +276,8 @@ export default function RecordPage() {
         const contentType = blob.type || "audio/webm";
         const { signedUrl } = await getUploadUrl(sessionId, taskDef.backendType, contentType, getAccessTokenSilently);
         await uploadAudioToStorage(signedUrl, blob);
-        await finalizeTask(sessionId, taskDef.backendType, "", getAccessTokenSilently);
+        const langCode = taskDef.id === "reading" ? language : "en";
+        await finalizeTask(sessionId, taskDef.backendType, langCode, getAccessTokenSilently);
       }
       navigate(`/results?session=${sessionId}`);
     } catch (err) {
@@ -438,11 +487,21 @@ export default function RecordPage() {
               </>
             )}
 
-            {/* Recorded badge */}
+            {/* Recorded / file badge */}
             {hasCurrentRecording && !isRecording && (
-              <div className="rp-recorded-badge">
-                <div className="rp-dot-green" /> Recording saved · {elapsed}s captured · Re-record below to redo
-              </div>
+              recordings[task.id]?.name ? (
+                <div className="rp-file-badge">
+                  📎 {recordings[task.id].name}
+                  <button
+                    className="rp-file-badge-remove"
+                    onClick={() => { setRecordings((p) => { const n = { ...p }; delete n[task.id]; return n; }); setFileError(null); setReadingDuration(null); }}
+                  >✕</button>
+                </div>
+              ) : (
+                <div className="rp-recorded-badge">
+                  <div className="rp-dot-green" /> Recording saved · {elapsed}s captured · Re-record below to redo
+                </div>
+              )
             )}
 
             {/* Record button */}
@@ -456,9 +515,40 @@ export default function RecordPage() {
               <div className="rp-record-label">{isRecording ? "Tap to stop" : "Tap to record"}</div>
             </div>
 
+            {/* Drop zone */}
+            {!isRecording && (
+              <>
+                <div
+                  className={`rp-dropzone${isDragging ? " dragover" : ""}`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <span>Drop audio file or <u>browse</u></span>
+                  <span className="rp-dropzone-sub">.wav · .mp3 · .m4a · .aac · .ogg · max 25 MB</span>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".wav,.mp3,.m4a,.aac,.ogg,audio/*"
+                  style={{ display: "none" }}
+                  onChange={handleFileInput}
+                />
+                {fileError && <p className="rp-error" style={{ marginTop: "0.4rem", fontSize: "0.8rem" }}>{fileError}</p>}
+              </>
+            )}
+
+            {/* Reading duration warning */}
+            {isReadingTask && readingDuration !== null && readingDuration < 13 && (
+              <p className="rp-error" style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
+                Minimum 13 seconds required. Detected: {readingDuration}s
+              </p>
+            )}
+
             <button
               className="rp-btn-submit"
-              disabled={!hasCurrentRecording || isRecording}
+              disabled={!hasCurrentRecording || isRecording || (isReadingTask && readingDuration !== null && readingDuration < 13)}
               onClick={nextTask}
             >
               {currentTask < TASKS.length - 1

@@ -133,7 +133,7 @@ serve(async (req: Request) => {
 
     // Create one task row per supported task type.
     // All start as PENDING — the client will upload audio and call finalize-task for each.
-    const taskTypes = ["SUSTAINED_VOWEL", "READING", "DDK"] as const;
+    const taskTypes = ["SUSTAINED_VOWEL", "READING"] as const;
     const tasksPayload = taskTypes.map((task_type) => ({
       session_id: session.session_id,
       task_type,

@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+requests
+supabase
+python-dotenv
+numpy
+scikit-learn
+tensorflow
+joblib
+librosa
+praat-parselmouth
+pydub
