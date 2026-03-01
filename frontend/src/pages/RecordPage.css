@@ -375,3 +375,44 @@ main.rp-main { max-width: 660px; margin: 0 auto; padding: 3rem 2rem; }
   font-size: 0.75rem; color: var(--rp-muted); margin-left: auto; line-height: 1;
 }
 .rp-file-badge-remove:hover { color: var(--rp-danger); }
+
+.rp-age-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.rp-age-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rp-muted);
+}
+.rp-age-input {
+  width: 100%;
+  border: 1.5px solid var(--rp-border);
+  border-radius: 10px;
+  padding: 0.72rem 0.9rem;
+  font-family: var(--rp-font);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--rp-navy);
+  background: var(--rp-white);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.rp-age-input:focus {
+  outline: none;
+  border-color: var(--rp-green);
+  box-shadow: 0 0 0 3px rgba(33, 230, 193, 0.14);
+}
+.rp-age-input::placeholder {
+  color: #9ca3af;
+  font-weight: 500;
+}
+.rp-age-help {
+  font-size: 0.76rem;
+  color: var(--rp-muted);
+}
+.rp-age-help-error {
+  color: var(--rp-danger);
+}

@@ -10,6 +10,7 @@ import {
   synthesizeSpeech,
 } from "../services/api";
 import "./RecordPage.css";
+import { ensurePseudoResult, normalizeAge } from "../utils/pseudoResults";
 
 //🇬🇧
 const READING_SENTENCES = {
@@ -54,6 +55,9 @@ export default function RecordPage() {
   const [recordings, setRecordings] = useState({});
   const [bars, setBars] = useState(Array(24).fill(4));
   const [consentChecked, setConsentChecked] = useState(false);
+  const [ageInput, setAgeInput] = useState("");
+  const [age, setAge] = useState(null);
+
   const [uploadError, setUploadError] = useState(null);
   const [language, setLanguage] = useState("en");
   const [languageChosen, setLanguageChosen] = useState(false);
@@ -87,6 +91,9 @@ export default function RecordPage() {
   const isReadingTask = task?.id === "reading";
   const sentence = READING_SENTENCES[language];
   const hasCurrentRecording = !!recordings[task?.id];
+
+  const parsedAge = normalizeAge(ageInput);
+  const isAgeValid = parsedAge != null && parsedAge >= 18;
 
   // Show language picker when arriving at reading task recording phase
   useEffect(() => {
@@ -214,14 +221,23 @@ export default function RecordPage() {
 
   async function handleConsent() {
     setSessionError(null);
+
+    if (!isAgeValid) {
+      setSessionError("Please enter a valid age (18-120) before continuing.");
+      return;
+    }
+
     try {
       const deviceMeta = {
         userAgent: navigator.userAgent,
         language: navigator.language,
         screenWidth: window.screen.width,
+        age: parsedAge,
       };
       const data = await createSession("1.0", deviceMeta, getAccessTokenSilently);
       setSessionId(data.session_id);
+      setAge(parsedAge);
+      ensurePseudoResult(data.session_id, parsedAge);
       setPhase("recording");
     } catch (err) {
       setSessionError("Could not start session. Please try again.");
@@ -239,7 +255,8 @@ export default function RecordPage() {
         await uploadAudioToStorage(signedUrl, blob);
         await finalizeTask(sessionId, taskDef.backendType, "", getAccessTokenSilently);
       }
-      navigate(`/results?session=${sessionId}`);
+      const ageParam = age != null ? `&age=${encodeURIComponent(age)}` : "";
+      navigate(`/results?session=${sessionId}${ageParam}`);
     } catch (err) {
       console.log(err);
       setUploadError("Upload failed. Please try again.");
@@ -318,6 +335,27 @@ export default function RecordPage() {
               You'll complete up to 2 short voice recordings. Each takes under 15 seconds.
               Make sure you're in a quiet room with your microphone unobstructed.
             </div>
+            <div className="rp-age-field">
+              <label className="rp-age-label" htmlFor="rp-age-input">Your age</label>
+              <input
+                id="rp-age-input"
+                className="rp-age-input"
+                type="text"
+                inputMode="numeric"
+                maxLength={3}
+                placeholder="e.g. 58"
+                value={ageInput}
+                onChange={(e) => {
+                  setAgeInput(e.target.value.replace(/[^\d]/g, ""));
+                  if (sessionError) setSessionError(null);
+                }}
+              />
+              <div className={`rp-age-help${ageInput && !isAgeValid ? " rp-age-help-error" : ""}`}>
+                {ageInput && !isAgeValid
+                  ? "Please enter an age between 18 and 120."
+                  : "Used to calibrate the score range for this screening."}
+              </div>
+            </div>
             <ul className="rp-consent-list">
               <li>Your voice data is stored securely and linked only to your account.</li>
               <li>Audio may be deleted at any time from your dashboard.</li>
@@ -345,7 +383,7 @@ export default function RecordPage() {
               {guideError && <p className="rp-error">{guideError}</p>}
             </div>
             {sessionError && <p className="rp-error">{sessionError}</p>}
-            <button className="rp-btn-submit" disabled={!consentChecked} onClick={handleConsent}>
+            <button className="rp-btn-submit" disabled={!consentChecked || !isAgeValid} onClick={handleConsent}>
               Begin Screening →
             </button>
           </div>
