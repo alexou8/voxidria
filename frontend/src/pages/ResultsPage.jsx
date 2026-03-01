@@ -246,7 +246,7 @@ export default function ResultsPage() {
                     <div className="res-feature-bar">
                       <div
                         className="res-feature-bar-fill"
-                        style={{ width: `${Math.min((f.value ?? 0) * 60, 100)}%`, background: statusColor[f.status] || "#21E6C1" }}
+                        style={{ width: `${Math.min((f.value ?? 0) * 100, 100)}%`, background: statusColor[f.status] || "#21E6C1" }}
                       />
                     </div>
                     <div className="res-feature-value" style={{ color: statusColor[f.status] || "#21E6C1" }}>

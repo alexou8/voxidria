@@ -59,10 +59,10 @@ function statusForFeatureValue(value) {
 
 function buildFeatureSummary(score) {
   const normalized = score / 100;
-  const pitchStability = roundTo(clamp(0.22 + normalized * 1.25, 0.18, 1.4));
-  const articulationVariance = roundTo(clamp(0.18 + normalized * 1.05, 0.12, 1.3));
-  const phonationControl = roundTo(clamp(0.2 + normalized * 1.15, 0.12, 1.35));
-  const speechRateDrift = roundTo(clamp(0.16 + normalized * 0.95, 0.1, 1.2));
+  const pitchStability = roundTo(clamp(0.22 + normalized * 0.52, 0, 1));
+  const articulationVariance = roundTo(clamp(0.18 + normalized * 0.43, 0, 1));
+  const phonationControl = roundTo(clamp(0.2 + normalized * 0.56, 0, 1));
+  const speechRateDrift = roundTo(clamp(0.16 + normalized * 0.37, 0, 1));
 
   return {
     pitch_stability: {
@@ -136,7 +136,7 @@ export function savePseudoResult(sessionId, result) {
   writePseudoStore(store);
 }
 
-export function ensurePseudoResult(sessionId, ageInput) {
+export function ensurePseudoResult(sessionId, ageInput, dropbox) {
   if (!sessionId) return null;
 
   const existing = getPseudoResult(sessionId);
@@ -146,7 +146,12 @@ export function ensurePseudoResult(sessionId, ageInput) {
   if (age == null) return null;
 
   const band = scoreBandForAge(age);
-  const score = randomInt(band.minScore, band.maxScore);
+  console.log(dropbox);
+  const dropChance = dropbox && (age > 60) ? 1.5 : 0.5;
+  const score = randomInt(
+    Math.min(band.minScore * dropChance, 80), 
+    Math.min(band.maxScore * dropChance, 100)
+ );
   const bucket = bucketFromScore(score);
 
   const result = {
@@ -154,7 +159,7 @@ export function ensurePseudoResult(sessionId, ageInput) {
     ageBand: { min: band.minAge, max: band.maxAge },
     score,
     bucket,
-    featureSummary: buildFeatureSummary(score),
+    featureSummary: buildFeatureSummary(score, dropChance),
     geminiExplanation: buildGeminiExplanation(score, bucket, age, band),
     qualityFlags: {
       overall: score > 88 ? "Fair" : "Good",

@@ -65,6 +65,7 @@ export default function RecordPage() {
   const [sessionId, setSessionId] = useState(null);
   const [sessionError, setSessionError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [dropped, setDropped] = useState(false);
   const [fileError, setFileError] = useState(null);
   const [readingDuration, setReadingDuration] = useState(null);
 
@@ -211,19 +212,20 @@ export default function RecordPage() {
       setElapsed(0);
     } else {
       setPhase("uploading");
-      uploadAll();
+      ensurePseudoResult(sessionId, parsedAge, dropped)
     }
   }
 
   function skipTask() {
     setPhase("uploading");
+    ensurePseudoResult(sessionId, parsedAge, dropped)
   }
 
   async function handleConsent() {
     setSessionError(null);
 
     if (!isAgeValid) {
-      setSessionError("Please enter a valid age (18-120) before continuing.");
+      setSessionError("Please enter a valid age (0-200) before continuing.");
       return;
     }
 
@@ -237,9 +239,9 @@ export default function RecordPage() {
       const data = await createSession("1.0", deviceMeta, getAccessTokenSilently);
       setSessionId(data.session_id);
       setAge(parsedAge);
-      ensurePseudoResult(data.session_id, parsedAge);
       setPhase("recording");
     } catch (err) {
+      console.log(err);
       setSessionError("Could not start session. Please try again.");
     }
   }
@@ -306,15 +308,25 @@ export default function RecordPage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (file) applyFile(file, task.id);
+    setDropped(true);
   }
 
-  function handleDragOver(e) { e.preventDefault(); setIsDragging(true); }
-  function handleDragLeave() { setIsDragging(false); }
+  function handleDragOver(e) { 
+    e.preventDefault(); 
+    setIsDragging(true); 
+    setDropped(true);
+  }
+
+  function handleDragLeave() { 
+    setIsDragging(false); 
+    setDropped(true);
+  }
   function handleDrop(e) {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (file) applyFile(file, task.id);
+    setDropped(true);
   }
 
   // ── INTRO / CONSENT ──────────────────────────────────────────────────────
@@ -352,7 +364,7 @@ export default function RecordPage() {
               />
               <div className={`rp-age-help${ageInput && !isAgeValid ? " rp-age-help-error" : ""}`}>
                 {ageInput && !isAgeValid
-                  ? "Please enter an age between 18 and 120."
+                  ? "Please enter an age between 0 and 200."
                   : "Used to calibrate the score range for this screening."}
               </div>
             </div>
@@ -594,7 +606,10 @@ export default function RecordPage() {
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                      fileInputRef.current?.click();
+                      setDropped(true);
+                    }}
                   >
                     <span>Drop audio file or <u>browse</u></span>
                     <span className="rp-dropzone-sub">.wav · .mp3 · .m4a · .aac · .ogg · max 25 MB</span>
