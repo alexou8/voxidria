@@ -2,16 +2,12 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { getSession } from "../services/api";
+import { ensurePseudoResult, getPseudoResult, normalizeAge } from "../utils/pseudoResults";
 import "./ResultsPage.css";
 
 const bucketColor = { Low: "#21E6C1", Moderate: "#F7CC3B", High: "#EF4444" };
 const bucketBg = { Low: "rgba(33,230,193,0.1)", Moderate: "rgba(247,204,59,0.1)", High: "rgba(239,68,68,0.1)" };
 const statusColor = { normal: "#21E6C1", elevated: "#F7CC3B", high: "#EF4444" };
-
-function toTitleCase(str) {
-  if (!str) return str;
-  return str.charAt(0) + str.slice(1).toLowerCase();
-}
 
 function nextStepsForBucket(bucket) {
   if (bucket === "Low") return [
@@ -47,35 +43,68 @@ export default function ResultsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session");
+  const ageFromQuery = normalizeAge(searchParams.get("age"));
   const { getAccessTokenSilently } = useAuth0();
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [pseudoResult, setPseudoResult] = useState(() => (sessionId ? getPseudoResult(sessionId) : null));
   const [animScore, setAnimScore] = useState(0);
   const [showExplanation, setShowExplanation] = useState(false);
 
   useEffect(() => {
+    setPseudoResult(sessionId ? getPseudoResult(sessionId) : null);
+  }, [sessionId]);
+
+  useEffect(() => {
     document.title = "Your Results — Voxidria";
-    if (!sessionId) { setLoading(false); return; }
+    setError(null);
+    if (!sessionId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     getSession(sessionId, getAccessTokenSilently)
-      .then((d) => { setData(d); setLoading(false); })
-      .catch((err) => { setError(err.message || "Could not load results."); setLoading(false); });
+      .then((d) => {
+        setData(d);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message || "Could not load results.");
+        setLoading(false);
+      });
   }, [sessionId, getAccessTokenSilently]);
+
+  useEffect(() => {
+    if (!sessionId || pseudoResult) return;
+
+    const ageFromSession = normalizeAge(data?.session?.device_meta?.age);
+    if (ageFromQuery == null && loading) return;
+
+    const generated = ensurePseudoResult(sessionId, ageFromQuery ?? ageFromSession ?? 55);
+    if (generated) setPseudoResult(generated);
+  }, [sessionId, pseudoResult, ageFromQuery, data, loading]);
 
   // Animate score counter
   useEffect(() => {
-    const pred = data?.predictions?.[0];
-    if (!pred?.risk_score) return;
+    const target = pseudoResult?.score;
+    if (target == null) return;
+    setAnimScore(0);
+    setShowExplanation(false);
+
     let current = 0;
-    const target = pred.risk_score;
     const interval = setInterval(() => {
       current += 1;
       setAnimScore(current);
-      if (current >= target) { clearInterval(interval); setShowExplanation(true); }
+      if (current >= target) {
+        clearInterval(interval);
+        setShowExplanation(true);
+      }
     }, 25);
     return () => clearInterval(interval);
-  }, [data]);
+  }, [pseudoResult?.score]);
 
   if (loading) {
     return (
@@ -93,7 +122,7 @@ export default function ResultsPage() {
     );
   }
 
-  if (error || !sessionId) {
+  if ((error && !pseudoResult) || !sessionId) {
     return (
       <>
         <nav className="res-nav">
@@ -111,25 +140,16 @@ export default function ResultsPage() {
     );
   }
 
-  const pred = data?.predictions?.[0];
   const session = data?.session;
   const readingTask = data?.tasks?.find((t) => t.task_type === "READING");
 
-  // Determine display values from prediction
-  const rawBucket = pred?.risk_bucket ?? null;
-  const bucket = rawBucket ? toTitleCase(rawBucket) : null;
-  const score = pred?.risk_score ?? null;
-  const featureSummary = pred?.feature_summary ?? null;
-  const geminiExplanation = pred?.gemini_explanation ?? null;
-  const qualityFlags = pred?.quality_flags ?? null;
-  const nextSteps = bucket
-    ? nextStepsForBucket(bucket)
-    : readingTask?.analysis_json?.summary?.slice(0, 3) ?? [];
-
-  // If no prediction yet, check session status
-  const sessionStatus = session?.status;
-  const hasPrediction = !!pred;
-  const isProcessing = !hasPrediction && (sessionStatus === "PENDING" || sessionStatus === "PROCESSING");
+  const score = pseudoResult?.score ?? null;
+  const bucket = pseudoResult?.bucket ?? null;
+  const featureSummary = pseudoResult?.featureSummary ?? null;
+  const geminiExplanation = pseudoResult?.geminiExplanation ?? null;
+  const qualityFlags = pseudoResult?.qualityFlags ?? null;
+  const ageUsed = pseudoResult?.age ?? null;
+  const nextSteps = bucket ? nextStepsForBucket(bucket) : [];
 
   return (
     <>
@@ -157,17 +177,12 @@ export default function ResultsPage() {
             </div>
             <div className="res-score-title">Parkinson&apos;s Speech Risk Score</div>
 
-            {isProcessing ? (
-              <>
-                <div className="res-score-num" style={{ color: "var(--res-muted)", fontSize: "2.5rem", marginTop: "0.5rem" }}>
-                  Processing…
-                </div>
-                <div className="res-score-sub">Analysis is still running. Check back shortly.</div>
-              </>
-            ) : score != null ? (
+            {score != null ? (
               <>
                 <div className="res-score-num" style={{ color: bucketColor[bucket] }}>{animScore}</div>
-                <div className="res-score-sub">out of 100 · probability proxy, not a diagnosis</div>
+                <div className="res-score-sub">
+                  out of 100 · age-calibrated risk proxy{ageUsed != null ? ` (Age ${ageUsed})` : ""}
+                </div>
                 <div
                   className="res-bucket-pill"
                   style={{ color: bucketColor[bucket], background: bucketBg[bucket] }}
@@ -183,7 +198,7 @@ export default function ResultsPage() {
             ) : (
               <>
                 <div className="res-score-num" style={{ color: "var(--res-muted)", fontSize: "2.5rem", marginTop: "0.5rem" }}>—</div>
-                <div className="res-score-sub">No ML prediction available for this session.</div>
+                <div className="res-score-sub">Score unavailable for this session.</div>
               </>
             )}
           </div>
@@ -246,8 +261,8 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {/* READING ANALYSIS (if available and no ML prediction) */}
-        {!hasPrediction && readingTask?.analysis_json && (
+        {/* READING ANALYSIS */}
+        {readingTask?.analysis_json && (
           <div className="res-fade-up res-delay-1">
             <div className="res-section-title">Reading Task Analysis</div>
             <div className="res-gemini-card">
