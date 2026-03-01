@@ -12,11 +12,11 @@ import {
 import "./RecordPage.css";
 import { ensurePseudoResult, normalizeAge } from "../utils/pseudoResults";
 
-//🇬🇧
+// Language options for the reading task
 const READING_SENTENCES = {
-  en: { label: "English", flag: "🇨🇦", text: READING_PASSAGE },
-  zh: { label: "Mandarin", flag: "🇨🇳", text: "飞速棕色的猫跳过了河边懒洋洋的狗。" },
-  hi: { label: "Hindi", flag: "🇮🇳", text: "तेज़ भूरे लोमड़े ने नदी के किनारे आलसी कुत्ते के ऊपर से कूद गए।" },
+  en: { label: "English", code: "EN", text: READING_PASSAGE },
+  zh: { label: "Mandarin", code: "ZH", text: "飞速棕色的猫跳过了河边懒洋洋的狗。" },
+  hi: { label: "Hindi", code: "HI", text: "तेज़ भूरे लोमड़े ने नदी के किनारे आलसी कुत्ते के ऊपर से कूद गए।" },
 };
 
 const TASKS = [
@@ -28,7 +28,7 @@ const TASKS = [
     instruction: 'Say "Ahhh" clearly and steadily',
     detail: 'Hold the vowel sound for at least 5 seconds in a quiet environment. Keep a steady volume and pitch. Do not stop and restart.',
     duration: 5,
-    icon: "🎤",
+    badge: "Task 1",
     skippable: false,
   },
   {
@@ -39,7 +39,7 @@ const TASKS = [
     instruction: "Read the sentence below aloud at a natural pace",
     detail: "Read the sentence clearly, as you would in normal conversation. Do not rush or slow down artificially.",
     duration: 8,
-    icon: "📖",
+    badge: "Task 2",
     skippable: true,
   },
 ];
@@ -151,6 +151,26 @@ export default function RecordPage() {
     guideAudioRef.current.play().catch(() => {});
   }, [guideAudioUrl]);
 
+  function resetGuideAudio() {
+    latestGuideReqId.current += 1;
+    if (guideAudioRef.current) {
+      guideAudioRef.current.pause();
+      guideAudioRef.current.currentTime = 0;
+    }
+    setGuideLoading(false);
+    setGuideError(null);
+    setGuideAudioUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return "";
+    });
+  }
+
+  // Clear guide audio when changing tasks or entering recording flow.
+  useEffect(() => {
+    if (phase !== "recording") return;
+    resetGuideAudio();
+  }, [phase, currentTask]);
+
   const playMedicalAssistant = async (section) => {
     const reqId = latestGuideReqId.current + 1;
     latestGuideReqId.current = reqId;
@@ -238,6 +258,7 @@ export default function RecordPage() {
       setSessionId(data.session_id);
       setAge(parsedAge);
       ensurePseudoResult(data.session_id, parsedAge);
+      resetGuideAudio();
       setPhase("recording");
     } catch (err) {
       setSessionError("Could not start session. Please try again.");
@@ -329,7 +350,7 @@ export default function RecordPage() {
         </nav>
         <main className="rp-main">
           <div className="rp-consent-wrap rp-fade-up">
-            <div className="rp-task-icon">🎙️</div>
+            <div className="rp-task-icon">Screening Protocol</div>
             <div className="rp-consent-title">Before you begin</div>
             <div className="rp-consent-sub">
               You'll complete up to 2 short voice recordings. Each takes under 15 seconds.
@@ -377,14 +398,18 @@ export default function RecordPage() {
                 onClick={() => playMedicalAssistant("CONSENT_OVERVIEW")}
                 disabled={guideLoading}
               >
-                {guideLoading ? "Loading assistant…" : "🎧 Hear Medical Assistant Overview"}
+                {guideLoading ? "Loading assistant..." : "Hear medical assistant overview"}
               </button>
-              {guideAudioUrl && <audio ref={guideAudioRef} controls src={guideAudioUrl} className="rp-audio" />}
+              {guideAudioUrl && (
+                <div className="rp-audio-wrap">
+                  <audio ref={guideAudioRef} controls src={guideAudioUrl} className="rp-audio" />
+                </div>
+              )}
               {guideError && <p className="rp-error">{guideError}</p>}
             </div>
             {sessionError && <p className="rp-error">{sessionError}</p>}
             <button className="rp-btn-submit" disabled={!consentChecked || !isAgeValid} onClick={handleConsent}>
-              Begin Screening →
+              Begin screening
             </button>
           </div>
         </main>
@@ -402,7 +427,7 @@ export default function RecordPage() {
         <main className="rp-main">
           <div className="rp-uploading-wrap rp-fade-up">
             <div className="rp-spinner" />
-            <div className="rp-uploading-title">Analysing your voice…</div>
+            <div className="rp-uploading-title">Analyzing voice sample...</div>
             <div className="rp-uploading-sub">
               Running feature extraction and ML inference.<br />
               This usually takes under 10 seconds.
@@ -422,7 +447,7 @@ export default function RecordPage() {
             <div className="rp-flash-popup">
               <div className="rp-flash-glow" />
               <div className="rp-flash-copy">
-                <div className="rp-flash-title">Hold up</div>
+                <div className="rp-flash-title">Action required</div>
                 <div className="rp-flash-message">{taskSwitchWarning}</div>
               </div>
               <div className="x-button">
@@ -443,7 +468,7 @@ export default function RecordPage() {
         {showLangPicker && !languageChosen && (
           <div className="rp-lang-overlay" onClick={() => setShowLangPicker(false)}>
             <div className="rp-lang-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="rp-lang-modal-title">🌐 Choose your language</div>
+              <div className="rp-lang-modal-title">Select reading language</div>
               <div className="rp-lang-modal-sub">
                 Select the language you'd like to read the sentence in.
               </div>
@@ -454,7 +479,7 @@ export default function RecordPage() {
                     className={`rp-lang-option${language === code ? " selected" : ""}`}
                     onClick={() => setLanguage(code)}
                   >
-                    <span className="rp-lang-flag">{lang.flag}</span>
+                    <span className="rp-lang-code">{lang.code}</span>
                     <span className="rp-lang-name">{lang.label}</span>
                     {language === code && <span className="rp-lang-check">✓</span>}
                   </div>
@@ -464,7 +489,7 @@ export default function RecordPage() {
                 setShowLangPicker(false);
                 setLanguageChosen(true);
               }}>
-                Confirm — {READING_SENTENCES[language].flag} {READING_SENTENCES[language].label}
+                Confirm selection: {READING_SENTENCES[language].label}
               </button>
             </div>
           </div>
@@ -500,12 +525,12 @@ export default function RecordPage() {
             <div className="rp-task-header">
               <div className="rp-task-header-top">
                 <div>
-                  <div className="rp-task-icon">{task.icon}</div>
+                  <div className="rp-task-icon">{task.badge}</div>
                   <div className="rp-task-title">{task.title}</div>
                   <div className="rp-task-instruction">{task.instruction}</div>
                 </div>
                 {task.skippable && !isRecording && (
-                  <button className="rp-btn-skip" onClick={skipTask}>Skip →</button>
+                  <button className="rp-btn-skip" onClick={skipTask}>Skip this task</button>
                 )}
               </div>
             </div>
@@ -519,7 +544,7 @@ export default function RecordPage() {
                     setShowLangPicker(true);
                     setLanguageChosen(false);
                     }}>
-                    {sentence.flag} {sentence.label} · Change language →
+                    {sentence.label} · Change language
                   </div>
                   <div className="rp-prompt-box">{sentence.text}</div>
                 </>
@@ -527,64 +552,6 @@ export default function RecordPage() {
 
               {/* Prompt for pitch task */}
               {!isReadingTask && <div className="rp-prompt-box">&quot;Ahhh…&quot;</div>}
-
-              {/* Medical assistant guide */}
-              <div className="rp-guide-row" style={{ marginBottom: "1rem" }}>
-                <button
-                  className="rp-btn-guide"
-                  onClick={() => playMedicalAssistant(
-                    task.id === "sustain" ? "AHHH_TEST" : "READING_TEST"
-                  )}
-                  disabled={guideLoading}
-                >
-                  {guideLoading ? "Loading…" : `🎧 Hear ${task.title} instructions`}
-                </button>
-                {guideAudioUrl && <audio ref={guideAudioRef} controls src={guideAudioUrl} className="rp-audio" />}
-                {guideError && <p className="rp-error">{guideError}</p>}
-              </div>
-
-              {/* Waveform */}
-              <div className="rp-waveform">
-                {bars.map((h, i) => (
-                  <div
-                    key={i}
-                    className={`rp-wave-bar${!isRecording ? " inactive" : ""}`}
-                    style={{ height: h }}
-                  />
-                ))}
-              </div>
-
-              {/* Timer */}
-              {isRecording && (
-                <>
-                  <div className="rp-timer">
-                    {String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}
-                  </div>
-                  <div className="rp-timer-bar">
-                    <div
-                      className="rp-timer-fill"
-                      style={{ width: `${Math.min((elapsed / task.duration) * 100, 100)}%` }}
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* Recorded badge */}
-              {hasCurrentRecording && !isRecording && (
-                recordings[task.id]?.name ? (
-                <div className="rp-file-badge">
-                  📎 {recordings[task.id].name}
-                  <button
-                    className="rp-file-badge-remove"
-                    onClick={() => { setRecordings((p) => { const n = { ...p }; delete n[task.id]; return n; }); setFileError(null); setReadingDuration(null); }}
-                  >✕</button>
-                </div>
-              ) : (
-                <div className="rp-recorded-badge">
-                  <div className="rp-dot-green" /> Recording saved · {elapsed}s captured · Re-record below to redo
-                </div>
-              )
-              )}
 
               {/* Drop zone */}
               {!isRecording && (
@@ -596,7 +563,7 @@ export default function RecordPage() {
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    <span>Drop audio file or <u>browse</u></span>
+                    <span>Upload audio file or <u>browse</u></span>
                     <span className="rp-dropzone-sub">.wav · .mp3 · .m4a · .aac · .ogg · max 25 MB</span>
                   </div>
                   <input
@@ -617,6 +584,70 @@ export default function RecordPage() {
                 </p>
               )}
 
+              {/* Medical assistant guide */}
+              <div className="rp-guide-row" style={{ marginBottom: "1rem" }}>
+                <button
+                  className="rp-btn-guide"
+                  onClick={() => playMedicalAssistant(
+                    task.id === "sustain" ? "AHHH_TEST" : "READING_TEST"
+                  )}
+                  disabled={guideLoading}
+                >
+                  {guideLoading ? "Loading..." : `Hear ${task.title} instructions`}
+                </button>
+                {guideAudioUrl && (
+                  <div className="rp-audio-wrap">
+                    <audio ref={guideAudioRef} controls src={guideAudioUrl} className="rp-audio" />
+                  </div>
+                )}
+                {guideError && <p className="rp-error">{guideError}</p>}
+              </div>
+
+              {/* Waveform */}
+              {isRecording && (
+                <div className="rp-waveform">
+                  {bars.map((h, i) => (
+                    <div
+                      key={i}
+                      className="rp-wave-bar"
+                      style={{ height: h }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Timer */}
+              {isRecording && (
+                <>
+                  <div className="rp-timer">
+                    {String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}
+                  </div>
+                  <div className="rp-timer-bar">
+                    <div
+                      className="rp-timer-fill"
+                      style={{ width: `${Math.min((elapsed / task.duration) * 100, 100)}%` }}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Recorded badge */}
+              {hasCurrentRecording && !isRecording && (
+                recordings[task.id]?.name ? (
+                <div className="rp-file-badge">
+                  {recordings[task.id].name}
+                  <button
+                    className="rp-file-badge-remove"
+                    onClick={() => { setRecordings((p) => { const n = { ...p }; delete n[task.id]; return n; }); setFileError(null); setReadingDuration(null); }}
+                  >x</button>
+                </div>
+              ) : (
+                <div className="rp-recorded-badge">
+                  <div className="rp-dot-green" /> Recording captured · {elapsed}s captured · Select record again to replace
+                </div>
+              )
+              )}
+
               {/* Record button */}
               <div className="rp-record-btn-wrap">
                 <button
@@ -625,7 +656,7 @@ export default function RecordPage() {
                 >
                   {isRecording ? "⏹" : "⏺"}
                 </button>
-                <div className="rp-record-label">{isRecording ? "Tap to stop" : "Tap to record"}</div>
+                <div className="rp-record-label">{isRecording ? "Stop recording" : "Start recording"}</div>
               </div>
 
               <button
@@ -634,8 +665,8 @@ export default function RecordPage() {
                 onClick={nextTask}
               >
                 {currentTask < TASKS.length - 1
-                  ? `Next Task → (${currentTask + 2}/${TASKS.length})`
-                  : "Submit All Recordings →"}
+                  ? `Next task (${currentTask + 2}/${TASKS.length})`
+                  : "Submit recordings"}
               </button>
             </div>
           </div>

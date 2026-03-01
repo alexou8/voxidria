@@ -4,6 +4,7 @@ import LandingPage from "./pages/LandingPage";
 import DashboardPage from "./pages/DashboardPage";
 import RecordPage from "./pages/RecordPage";
 import ResultsPage from "./pages/ResultsPage";
+import ProfilePage from "./pages/ProfilePage";
 
 export default function App() {
   const { isAuthenticated, isLoading } = useAuth0();
@@ -31,6 +32,7 @@ export default function App() {
       <Route path="/" element={isAuthenticated ? <DashboardPage /> : <LandingPage />} />
       <Route path="/record" element={isAuthenticated ? <RecordPage /> : <LandingPage />} />
       <Route path="/results" element={isAuthenticated ? <ResultsPage /> : <LandingPage />} />
+      <Route path="/profile" element={isAuthenticated ? <ProfilePage /> : <LandingPage />} />
     </Routes>
   );
 }
