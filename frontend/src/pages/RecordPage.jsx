@@ -28,7 +28,7 @@ const TASKS = [
     detail: 'Hold the vowel sound for at least 5 seconds in a quiet environment. Keep a steady volume and pitch. Do not stop and restart.',
     duration: 5,
     icon: "🎤",
-    skippable: true,
+    skippable: false,
   },
   {
     id: "reading",
@@ -39,7 +39,7 @@ const TASKS = [
     detail: "Read the sentence clearly, as you would in normal conversation. Do not rush or slow down artificially.",
     duration: 8,
     icon: "📖",
-    skippable: false,
+    skippable: true,
   },
 ];
 
@@ -204,8 +204,7 @@ export default function RecordPage() {
   }
 
   function skipTask() {
-    setCurrentTask((t) => t + 1);
-    setElapsed(0);
+    setPhase("uploading");
   }
 
   async function handleConsent() {
@@ -237,6 +236,7 @@ export default function RecordPage() {
       }
       navigate(`/results?session=${sessionId}`);
     } catch (err) {
+      console.log(err);
       setUploadError("Upload failed. Please try again.");
       setPhase("recording");
     }
@@ -318,13 +318,14 @@ export default function RecordPage() {
           <div className="rp-nav-logo"><img src="/logo.png" alt="Voxidria" height="38" /></div>
         </nav>
         <main className="rp-main">
-          <div className="rp-uploading-wrap rp-fade-up">x
+          <div className="rp-uploading-wrap rp-fade-up">
             <div className="rp-spinner" />
             <div className="rp-uploading-title">Analysing your voice…</div>
             <div className="rp-uploading-sub">
               Running feature extraction and ML inference.<br />
               This usually takes under 10 seconds.
             </div>
+            {!uploadError && navigate(`/results?session=${sessionId}`)}
             {uploadError && <p className="rp-error" style={{ marginTop: "1rem" }}>{uploadError}</p>}
           </div>
         </main>
