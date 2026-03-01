@@ -120,7 +120,7 @@ tr:hover td { background: rgba(33,230,193,0.03); }
 
 /* Disclaimer */
 .db-disclaimer {
-  background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px;
-  padding: 1rem 1.4rem; margin-top: 2rem; font-size: 0.78rem; color: #7f1d1d; line-height: 1.6;
+  background: #fdfdda; border: 1px solid #fff06e; border-radius: 10px;
+  padding: 1rem 1.4rem; margin-top: 2rem; font-size: 0.78rem; color: #7b5000; line-height: 1.6;
 }
 .db-disclaimer strong { font-weight: 700; }

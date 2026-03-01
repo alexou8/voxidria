@@ -14,10 +14,11 @@ const FUNCTIONS_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
  * Stored here so the same text is always sent to create-session.
  */
 export const READING_PASSAGE =
-  "The rainbow is a division of white light into many beautiful colors. " +
-  "These take the shape of a long round arch, with its path high above, " +
-  "and its two ends apparently beyond the horizon. There is, according to " +
-  "legend, a boiling pot of gold at one end.";
+  "The North Wind and the Sun were disputing which was the stronger, when a traveler came along wrapped in a warm cloak. "
++ "They agreed that the one who first succeeded in making the traveler take his cloak off should be considered stronger than the other. "
++ "Then the North Wind blew as hard as he could, but the more he blew the more closely did the traveler fold his cloak around him; and at last the North Wind gave up the attempt. "
++ "Then the Sun shone out warmly, and immediately the traveler took off his cloak. "
++ "And so the North Wind was obliged to confess that the Sun was the stronger of the two.";
 
 /**
  * Internal helper: call a Supabase Edge Function with Auth0 JWT.

@@ -22,8 +22,101 @@ html, body {
 @keyframes rp-spin { to{transform:rotate(360deg)} }
 @keyframes rp-ripple { 0%{transform:scale(0.9);opacity:1} 100%{transform:scale(2.5);opacity:0} }
 @keyframes rp-slideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes rp-flashIn {
+  0% { opacity: 0; transform: translateY(-24px) scale(0.92); }
+  60% { opacity: 1; transform: translateY(4px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes rp-flashGlow {
+  0%, 100% { opacity: 0.25; transform: scale(0.96); }
+  50% { opacity: 0.75; transform: scale(1.04); }
+}
+@keyframes rp-flashSweep {
+  from { transform: translateX(-130%); }
+  to { transform: translateX(130%); }
+}
 
 .rp-fade-up { animation: rp-fadeUp 0.5s ease both; }
+
+/* Flash warning popup */
+.rp-flash-wrap {
+  position: fixed;
+  top: 1.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 320;
+  width: min(92vw, 620px);
+  pointer-events: none;
+}
+.rp-flash-popup {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(68, 239, 182, 0.5);
+  background:
+    linear-gradient(120deg, rgba(68, 239, 179, 0.22), rgba(26, 46, 68, 0.96)),
+    radial-gradient(circle at 12% 20%, rgba(59, 247, 169, 0.242), rgba(247, 204, 59, 0) 34%);
+  color: var(--rp-danger);
+  padding: 0.95rem 1rem 0.95rem 1.2rem;
+  box-shadow: 0 18px 40px rgba(26, 46, 68, 0.35), 0 0 24px rgba(239, 68, 68, 0.3);
+  overflow: hidden;
+  animation: rp-flashIn 0.38s cubic-bezier(0.19, 1, 0.22, 1);
+}
+.rp-flash-popup::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0));
+  animation: rp-flashSweep 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+.rp-flash-glow {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #f7cc3b;
+  box-shadow: 0 0 0 8px rgba(247, 204, 59, 0.2), 0 0 20px rgba(247, 204, 59, 0.65);
+  animation: rp-flashGlow 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.rp-flash-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.rp-flash-title {
+  font-size: 0.86rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.rp-flash-message {
+  font-size: 0.87rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.95);
+}
+.rp-flash-close {
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  font-family: var(--rp-font);
+  transition: transform 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+.rp-flash-close:hover {
+  transform: scale(1.08);
+  background: rgba(255, 255, 255, 0.2);
+}
 
 /* NAV */
 nav.rp-nav {
@@ -123,7 +216,7 @@ main.rp-main { max-width: 660px; margin: 0 auto; padding: 3rem 2rem; }
 
 /* Prompt box */
 .rp-prompt-box {
-  background: linear-gradient(135deg, rgba(26,46,68,0.04), rgba(33,230,193,0.06));
+  background: linear-gradient(135deg, rgba(26,46,68,0.15), rgba(33,230,193,0.25));
   border: 1px solid rgba(33,230,193,0.25); border-radius: 10px;
   padding: 1.2rem 1.5rem; font-size: 1.05rem; font-weight: 700;
   color: var(--rp-navy); text-align: center; margin-bottom: 1.5rem; line-height: 1.6;
@@ -220,3 +313,40 @@ main.rp-main { max-width: 660px; margin: 0 auto; padding: 3rem 2rem; }
 
 /* Error */
 .rp-error { color: var(--rp-danger); font-size: 0.85rem; }
+
+@media (max-width: 760px) {
+  .rp-flash-wrap {
+    top: 0.85rem;
+    width: calc(100vw - 1rem);
+  }
+  .rp-flash-popup {
+    padding: 0.85rem 0.8rem 0.85rem 0.95rem;
+  }
+  .rp-flash-title {
+    font-size: 0.8rem;
+  }
+  .rp-flash-message {
+    font-size: 0.8rem;
+  }
+}
+
+.unstyled-btn {
+  background: inherit;
+  border: inherit;
+  padding: 0;
+  margin: 0;
+  font: var(--rp-font);
+  color: inherit;
+  text-align: inherit;
+  outline: inherit;
+  cursor: pointer;
+}
+
+.x-button {
+  display: block;
+  width: 100%;
+  text-align: right;
+  font-weight: bold;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
