@@ -350,3 +350,28 @@ main.rp-main { max-width: 660px; margin: 0 auto; padding: 3rem 2rem; }
   text-transform: capitalize;
   white-space: nowrap;
 }
+
+/* Drop zone */
+.rp-dropzone {
+  margin-top: 1rem; padding: 0.9rem 1rem; border-radius: 10px;
+  border: 1.5px dashed var(--rp-border); background: var(--rp-slate);
+  display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
+  cursor: pointer; transition: border-color 0.2s, background 0.2s;
+  font-size: 0.82rem; color: var(--rp-muted); font-weight: 600;
+}
+.rp-dropzone:hover { border-color: var(--rp-green); background: rgba(33,230,193,0.04); }
+.rp-dropzone.dragover { border-color: var(--rp-green); background: rgba(33,230,193,0.08); }
+.rp-dropzone-sub { font-size: 0.72rem; font-weight: 400; color: var(--rp-muted); }
+
+/* File badge */
+.rp-file-badge {
+  display: flex; align-items: center; gap: 0.6rem; margin-top: 0.75rem;
+  padding: 0.6rem 0.9rem; background: rgba(33,230,193,0.08);
+  border: 1px solid rgba(33,230,193,0.25); border-radius: 8px;
+  font-size: 0.8rem; font-weight: 600; color: var(--rp-navy);
+}
+.rp-file-badge-remove {
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-size: 0.75rem; color: var(--rp-muted); margin-left: auto; line-height: 1;
+}
+.rp-file-badge-remove:hover { color: var(--rp-danger); }

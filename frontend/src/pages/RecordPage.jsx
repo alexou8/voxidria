@@ -60,6 +60,11 @@ export default function RecordPage() {
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [sessionError, setSessionError] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileError, setFileError] = useState(null);
+  const [readingDuration, setReadingDuration] = useState(null);
+
+  const fileInputRef = useRef(null);
   const [taskSwitchWarning, setTaskSwitchWarning] = useState("");
 
   // Guide audio (ElevenLabs)
@@ -256,6 +261,45 @@ export default function RecordPage() {
     }
   }
 
+  const ACCEPTED_EXTS = [".wav", ".mp3", ".m4a", ".aac", ".ogg"];
+  const MAX_BYTES = 25 * 1024 * 1024;
+
+  function validateFile(file) {
+    const ext = (file.name.match(/\.[^.]+$/) ?? [""])[0].toLowerCase();
+    if (!ACCEPTED_EXTS.includes(ext)) return "Invalid type. Accepted: .wav .mp3 .m4a .aac .ogg";
+    if (file.size > MAX_BYTES) return "File too large. Maximum is 25 MB.";
+    return null;
+  }
+
+  function applyFile(file, taskId) {
+    const err = validateFile(file);
+    if (err) { setFileError(err); return; }
+    setFileError(null);
+    setRecordings((prev) => ({ ...prev, [taskId]: file }));
+    if (taskId === "reading") {
+      const url = URL.createObjectURL(file);
+      const audio = new Audio();
+      audio.onloadedmetadata = () => { setReadingDuration(Math.floor(audio.duration)); URL.revokeObjectURL(url); };
+      audio.onerror = () => URL.revokeObjectURL(url);
+      audio.src = url;
+    }
+  }
+
+  function handleFileInput(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) applyFile(file, task.id);
+  }
+
+  function handleDragOver(e) { e.preventDefault(); setIsDragging(true); }
+  function handleDragLeave() { setIsDragging(false); }
+  function handleDrop(e) {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) applyFile(file, task.id);
+  }
+
   // ── INTRO / CONSENT ──────────────────────────────────────────────────────
   if (phase === "intro") {
     return (
@@ -387,6 +431,7 @@ export default function RecordPage() {
             </div>
           </div>
         )}
+
         <nav className="rp-nav">
           <div className="rp-nav-logo" onClick={() => navigate("/")}>
             <img src="/logo.png" alt="Voxidria" height="38" />
@@ -488,9 +533,50 @@ export default function RecordPage() {
 
               {/* Recorded badge */}
               {hasCurrentRecording && !isRecording && (
+                recordings[task.id]?.name ? (
+                <div className="rp-file-badge">
+                  📎 {recordings[task.id].name}
+                  <button
+                    className="rp-file-badge-remove"
+                    onClick={() => { setRecordings((p) => { const n = { ...p }; delete n[task.id]; return n; }); setFileError(null); setReadingDuration(null); }}
+                  >✕</button>
+                </div>
+              ) : (
                 <div className="rp-recorded-badge">
                   <div className="rp-dot-green" /> Recording saved · {elapsed}s captured · Re-record below to redo
                 </div>
+              )
+              )}
+
+              {/* Drop zone */}
+              {!isRecording && (
+                <>
+                  <div
+                    className={`rp-dropzone${isDragging ? " dragover" : ""}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <span>Drop audio file or <u>browse</u></span>
+                    <span className="rp-dropzone-sub">.wav · .mp3 · .m4a · .aac · .ogg · max 25 MB</span>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".wav,.mp3,.m4a,.aac,.ogg,audio/*"
+                    style={{ display: "none" }}
+                    onChange={handleFileInput}
+                  />
+                  {fileError && <p className="rp-error" style={{ marginTop: "0.4rem", fontSize: "0.8rem" }}>{fileError}</p>}
+                </>
+              )}
+
+              {/* Reading duration warning */}
+              {isReadingTask && readingDuration !== null && readingDuration < 13 && (
+                <p className="rp-error" style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
+                  Minimum 13 seconds required. Detected: {readingDuration}s
+                </p>
               )}
 
               {/* Record button */}
